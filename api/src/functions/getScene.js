@@ -37,8 +37,20 @@ function getScenesContainer() {
   return client.database("ExcalidrawNotesDB").container("Scenes");
 }
 
+// Must be byte-for-byte identical to saveScene.js's version, or a saved
+// scene's id won't match what this function looks up.
+function sanitizeTopicForId(topic) {
+  const stripped = topic
+    .toLowerCase()
+    .replace(/["'/\\?#\r\n\t]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 100);
+
+  return encodeURIComponent(stripped);
+}
+
 function buildSceneId(userId, topic) {
-  return `${userId}:${encodeURIComponent(topic.toLowerCase())}`;
+  return `${userId}:${sanitizeTopicForId(topic)}`;
 }
 
 app.http("getScene", {
@@ -48,11 +60,6 @@ app.http("getScene", {
 
   handler: async (request) => {
     try {
-      /*
-       * Static Web Apps route protection verifies authentication first.
-       * This check is still important because it prevents accidental data
-       * leakage if routing rules are later changed incorrectly.
-       */
       const userId = getAuthenticatedUserId(request);
 
       if (!userId) {
@@ -88,12 +95,6 @@ app.http("getScene", {
       const id = buildSceneId(userId, topic);
 
       try {
-        /*
-         * This requires:
-         * Database: ExcalidrawNotesDB
-         * Container: Scenes
-         * Partition key: /userId
-         */
         const response = await container.item(id, userId).read();
 
         return {
@@ -101,10 +102,6 @@ app.http("getScene", {
           jsonBody: response.resource || null
         };
       } catch (error) {
-        /*
-         * No stored item is normal when a user types a new topic for the
-         * first time. Return null instead of treating it as an error.
-         */
         if (error.code === 404) {
           return {
             status: 200,

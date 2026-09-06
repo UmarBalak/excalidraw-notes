@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Excalidraw,
   convertToExcalidrawElements,
@@ -220,6 +220,47 @@ function LandingPage() {
   );
 }
 
+// Strips a live Excalidraw scene down to the same lightweight skeleton shape
+// the AI itself produces, so it can be sent back as context for edits
+// without wasting tokens on rendering internals it doesn't need.
+function simplifySceneForPrompt(elements: readonly any[]) {
+  const visible = elements.filter((el) => !el.isDeleted);
+  const boundTextByContainer = new Map<string, string>();
+
+  visible.forEach((el) => {
+    if (el.type === "text" && el.containerId) {
+      boundTextByContainer.set(el.containerId, el.text);
+    }
+  });
+
+  return visible
+    .filter((el) => !(el.type === "text" && el.containerId))
+    .map((el) => {
+      const item: Record<string, unknown> = {
+        id: el.id,
+        type: el.type,
+        x: Math.round(el.x),
+        y: Math.round(el.y),
+      };
+
+      if (el.width) item.width = Math.round(el.width);
+      if (el.height) item.height = Math.round(el.height);
+      if (el.type === "text") item.text = el.text;
+
+      if (el.type === "arrow") {
+        const startId = el.startBinding?.elementId;
+        const endId = el.endBinding?.elementId;
+        if (startId) item.start = { id: startId };
+        if (endId) item.end = { id: endId };
+      }
+
+      const boundText = boundTextByContainer.get(el.id);
+      if (boundText) item.label = { text: boundText };
+
+      return item;
+    });
+}
+
 function EditorPage() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
@@ -228,14 +269,15 @@ function EditorPage() {
     new URLSearchParams(window.location.search).get("topic")?.trim() ||
     "Untitled";
   const [topic, setTopic] = useState(initialTopic);
+  // Separate from `topic` — this is what gets sent to the AI. `topic` stays
+  // the workspace's save/load name so an edit instruction never renames it.
+  const [instruction, setInstruction] = useState(initialTopic);
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [loadingScene, setLoadingScene] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState("Cloud sync on");
+  const [saveMessage, setSaveMessage] = useState("Click Save to sync");
   const [error, setError] = useState("");
-  const sceneLoaded = useRef(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshScenes = () => {
     fetch("/api/listScenes")
@@ -251,7 +293,6 @@ function EditorPage() {
 
     setLoadingScene(true);
     setError("");
-    sceneLoaded.current = false;
 
     fetch(`/api/getScene?topic=${encodeURIComponent(selectedTopic)}`)
       .then((response) => (response.ok ? response.json() : null))
@@ -272,6 +313,8 @@ function EditorPage() {
         }
 
         setTopic(selectedTopic);
+        setInstruction(""); // ready for a fresh "add/remove ..." instruction
+        setSaveMessage("Click Save to sync");
         window.history.replaceState(
           null,
           "",
@@ -287,7 +330,6 @@ function EditorPage() {
         setError("Unable to load that workspace.");
       })
       .finally(() => {
-        sceneLoaded.current = true;
         setLoadingScene(false);
       });
   };
@@ -297,26 +339,26 @@ function EditorPage() {
 
     loadScene(initialTopic);
     refreshScenes();
-
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
   }, [excalidrawAPI, initialTopic]);
 
   const generateDiagram = async () => {
-    const targetTopic = topic.trim();
-    if (!targetTopic || !excalidrawAPI) return;
+    const targetInstruction = instruction.trim();
+    if (!targetInstruction || !excalidrawAPI) return;
 
     setGenerating(true);
     setError("");
 
     try {
+      const existingElements = simplifySceneForPrompt(
+        excalidrawAPI.getSceneElements(),
+      );
+
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ topic: targetTopic }),
+        body: JSON.stringify({ topic: targetInstruction, existingElements }),
       });
 
       if (!response.ok) {
@@ -328,11 +370,12 @@ function EditorPage() {
       excalidrawAPI.updateScene({
         elements: convertToExcalidrawElements(skeleton),
       });
-      window.history.replaceState(
-        null,
-        "",
-        `/editor?topic=${encodeURIComponent(targetTopic)}`,
+      setSaveMessage(
+        existingElements.length
+          ? "Edited — click Save to keep this"
+          : "Generated — click Save to keep this",
       );
+
     } catch (generationError) {
       console.error("Unable to generate diagram:", generationError);
       setError(
@@ -414,6 +457,21 @@ function EditorPage() {
           ))}
         </select>
 
+        <span style={{ fontSize: 11, opacity: 0.6 }}>Workspace name</span>
+        <input
+          className="editor-topic-input"
+          value={topic}
+          onChange={(event) => setTopic(event.target.value)}
+          placeholder="Workspace name..."
+          maxLength={180}
+          disabled={generating}
+        />
+
+        <span style={{ fontSize: 11, opacity: 0.6 }}>
+          {excalidrawAPI && excalidrawAPI.getSceneElements().length > 0
+            ? "Ask for a change (e.g. remove the arrow to Database)"
+            : "Describe the diagram to generate"}
+        </span>
         <form
           className="editor-ai-form"
           onSubmit={(event) => {
@@ -423,17 +481,17 @@ function EditorPage() {
         >
           <input
             className="editor-topic-input"
-            value={topic}
-            onChange={(event) => setTopic(event.target.value)}
-            placeholder="Describe a diagram..."
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder="Describe a diagram or a change..."
             maxLength={180}
             disabled={generating}
           />
           <button
             className="editor-generate-button"
             type="submit"
-            disabled={generating || !topic.trim()}
-            title="Generate diagram"
+            disabled={generating || !instruction.trim()}
+            title="Generate or edit diagram"
           >
             {generating ? "..." : "Generate"}
           </button>
@@ -457,13 +515,6 @@ function EditorPage() {
           if (appState.theme === "light" || appState.theme === "dark") {
             setTheme(appState.theme);
           }
-
-          if (!excalidrawAPI || !sceneLoaded.current) return;
-
-          if (saveTimer.current) clearTimeout(saveTimer.current);
-          saveTimer.current = setTimeout(() => {
-            void saveScene();
-          }, 1000);
         }}
       />
 

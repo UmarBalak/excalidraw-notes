@@ -36,8 +36,23 @@ function getAuthenticatedUser(request) {
   }
 }
 
+// Cosmos DB forbids "/", "\", "?", "#" in item ids outright, and anything
+// unusual (quotes, newlines, tabs) has been observed to break the SDK's
+// request-signing — so this strips everything except a safe character set
+// BEFORE the id is ever built. Must stay identical in getScene.js, or a
+// saved scene becomes unfindable because the two ids no longer match.
+function sanitizeTopicForId(topic) {
+  const stripped = topic
+    .toLowerCase()
+    .replace(/["'/\\?#\r\n\t]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 100);
+
+  return encodeURIComponent(stripped);
+}
+
 function createSceneId(userId, topic) {
-  return `${userId}:${encodeURIComponent(topic.toLowerCase())}`;
+  return `${userId}:${sanitizeTopicForId(topic)}`;
 }
 
 function getScenesContainer() {
@@ -61,6 +76,10 @@ function validateScene(topic, elements) {
 
   if (topic.length > MAX_TOPIC_LENGTH) {
     return `Topic must be ${MAX_TOPIC_LENGTH} characters or fewer.`;
+  }
+
+  if (!sanitizeTopicForId(topic)) {
+    return "Workspace name must contain at least one letter or number.";
   }
 
   if (!Array.isArray(elements)) {

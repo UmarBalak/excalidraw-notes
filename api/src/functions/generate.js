@@ -1,17 +1,6 @@
 const { app } = require("@azure/functions");
 
-const SYSTEM_PROMPT = `
-You are a diagram generator for an Excalidraw-based note-taking application.
-
-Return ONLY a valid JSON array.
-Do not include markdown.
-Do not include triple backticks.
-Do not explain the response.
-Do not include any text outside the JSON array.
-
-The array must contain Excalidraw element skeletons compatible with:
-convertToExcalidrawElements(...)
-
+const CREATE_INSTRUCTIONS = `
 Create an educational diagram and concise note layout for the requested topic.
 
 LAYOUT REQUIREMENTS
@@ -44,7 +33,7 @@ Create 3 to 6 labelled nodes on the left side.
   "label": { "text": "Node label" }
 
 - Use arrows to connect the nodes.
-- Arrow start and end ids must match actual node ids exactly.
+- Arrow start and end ids must match actual node ids exactly. Never reference an id that is not one of the node ids you created.
 
 Example arrow:
 {
@@ -84,8 +73,58 @@ Example:
 - Keep labels short.
 - Make the diagram accurate and useful.
 - Use simple ASCII text only.
-- Return valid JSON only.
 `;
+
+const EDIT_INSTRUCTIONS = `
+You are given the CURRENT scene as a JSON array (element skeletons) and an EDIT INSTRUCTION describing one change to make to it.
+
+RULES:
+- Return the COMPLETE updated array representing the new full scene — every element that should still exist, not just the changed ones.
+- Copy every unchanged element's id, position, size, and content EXACTLY as given. Do not reword or reposition anything that wasn't asked to change.
+- Only add, remove, or modify what the instruction specifically requests.
+- If asked to remove something, delete that element AND any arrow whose start or end id pointed at it.
+- If asked to add something, give it a new unique id that doesn't collide with any existing id, place it in free space near related content, and connect it with an arrow if that fits.
+- If asked to edit text (a label or the notes block), keep the same id, position, and size — only change the text/label content.
+`;
+
+const OUTPUT_RULES = `
+Return ONLY a valid JSON array.
+Do not include markdown.
+Do not include triple backticks.
+Do not explain the response.
+Do not include any text outside the JSON array.
+The array must contain Excalidraw element skeletons compatible with convertToExcalidrawElements(...).
+`;
+
+const RESPONSE_SCHEMA = {
+  type: "ARRAY",
+  items: {
+    type: "OBJECT",
+    properties: {
+      id: { type: "STRING" },
+      type: { type: "STRING" },
+      x: { type: "NUMBER" },
+      y: { type: "NUMBER" },
+      width: { type: "NUMBER" },
+      height: { type: "NUMBER" },
+      text: { type: "STRING" },
+      fontSize: { type: "NUMBER" },
+      label: {
+        type: "OBJECT",
+        properties: { text: { type: "STRING" } }
+      },
+      start: {
+        type: "OBJECT",
+        properties: { id: { type: "STRING" } }
+      },
+      end: {
+        type: "OBJECT",
+        properties: { id: { type: "STRING" } }
+      }
+    },
+    required: ["id", "type"]
+  }
+};
 
 function extractJsonArray(value) {
   const cleaned = String(value || "")
@@ -103,6 +142,14 @@ function extractJsonArray(value) {
   return JSON.parse(cleaned.slice(startIndex, endIndex + 1));
 }
 
+function sanitizeSkeleton(skeleton) {
+  const ids = new Set(skeleton.map((el) => el?.id).filter(Boolean));
+  return skeleton.filter((el) => {
+    if (el?.type !== "arrow") return true;
+    return ids.has(el?.start?.id) && ids.has(el?.end?.id);
+  });
+}
+
 app.http("generate", {
   methods: ["POST"],
   authLevel: "anonymous",
@@ -112,22 +159,18 @@ app.http("generate", {
     try {
       const body = await request.json();
       const topic = String(body?.topic || "").trim();
+      const existingElements = Array.isArray(body?.existingElements)
+        ? body.existingElements
+        : [];
 
       if (!topic) {
-        return {
-          status: 400,
-          jsonBody: {
-            error: "Topic is required."
-          }
-        };
+        return { status: 400, jsonBody: { error: "Topic is required." } };
       }
 
       if (topic.length > 180) {
         return {
           status: 400,
-          jsonBody: {
-            error: "Topic must be 180 characters or fewer."
-          }
+          jsonBody: { error: "Topic must be 180 characters or fewer." }
         };
       }
 
@@ -135,46 +178,42 @@ app.http("generate", {
 
       if (!apiKey) {
         console.error("Missing GEMINI_API_KEY application setting.");
-
         return {
           status: 500,
-          jsonBody: {
-            error: "AI generation is not configured yet."
-          }
+          jsonBody: { error: "AI generation is not configured yet." }
         };
       }
 
-      /*
-       * Keep this environment-configurable because available Gemini models
-       * can differ across Google AI Studio projects and change over time.
-       *
-       * In Azure:
-       * GEMINI_MODEL = gemini-2.5-flash-lite
-       */
-      const model =
-        process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+      const isEdit = existingElements.length > 0;
+
+      const promptParts = [
+        "You are a diagram generator for an Excalidraw-based note-taking application.",
+        OUTPUT_RULES
+      ];
+
+      if (isEdit) {
+        promptParts.push(EDIT_INSTRUCTIONS);
+        promptParts.push(`Current scene:\n${JSON.stringify(existingElements)}`);
+        promptParts.push(`Edit instruction: ${topic}`);
+      } else {
+        promptParts.push(CREATE_INSTRUCTIONS);
+        promptParts.push(`Requested topic: ${topic}`);
+      }
+
+      const finalPrompt = promptParts.join("\n\n");
 
       const geminiResponse = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: `${SYSTEM_PROMPT}\n\nRequested topic: ${topic}`
-                  }
-                ]
-              }
-            ],
+            contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
             generationConfig: {
               temperature: 0.25,
-              responseMimeType: "application/json"
+              responseMimeType: "application/json",
+              responseSchema: RESPONSE_SCHEMA
             }
           })
         }
@@ -185,15 +224,17 @@ app.http("generate", {
       if (!geminiResponse.ok) {
         console.error(
           "Gemini request failed:",
-          geminiResponse.status,
-          JSON.stringify(geminiData)
+          JSON.stringify({
+            status: geminiResponse.status,
+            model,
+            error: geminiData?.error?.status,
+            message: geminiData?.error?.message
+          })
         );
 
         return {
           status: 502,
-          jsonBody: {
-            error: "The AI provider could not generate a diagram."
-          }
+          jsonBody: { error: "The AI provider could not generate a diagram." }
         };
       }
 
@@ -202,24 +243,28 @@ app.http("generate", {
           ?.map((part) => part?.text || "")
           .join("") || "";
 
-      const skeleton = extractJsonArray(generatedText);
+      let skeleton = extractJsonArray(generatedText);
 
       if (!Array.isArray(skeleton)) {
         throw new Error("The generated content was not an array.");
       }
 
-      return {
-        status: 200,
-        jsonBody: skeleton
-      };
+      skeleton = sanitizeSkeleton(skeleton);
+
+      return { status: 200, jsonBody: skeleton };
     } catch (error) {
-      console.error("Generate function error:", error);
+      console.error(
+        "Generate function error:",
+        JSON.stringify({
+          name: error?.name,
+          message: error?.message,
+          stack: error?.stack
+        })
+      );
 
       return {
         status: 500,
-        jsonBody: {
-          error: "Unable to generate a diagram right now."
-        }
+        jsonBody: { error: "Unable to generate a diagram right now." }
       };
     }
   }
