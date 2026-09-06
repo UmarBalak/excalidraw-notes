@@ -1,156 +1,251 @@
-import { useEffect, useRef, useState } from "react";
-import { Excalidraw, convertToExcalidrawElements } from "@excalidraw/excalidraw";
+import { useState } from "react";
+import { Excalidraw } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import "./App.css";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-
-const SUGGESTIONS = ["Architecture", "Flowchart", "Database schema"];
 
 export default function App() {
-  const [excalidrawAPI, setExcalidrawAPI] =
-    useState<ExcalidrawImperativeAPI | null>(null);
-  const [topic, setTopic] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentPath = window.location.pathname;
 
-  useEffect(() => {
-    if (!excalidrawAPI || !topic) return;
-    fetch(`/api/getScene?topic=${encodeURIComponent(topic)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.elements) {
-          excalidrawAPI.updateScene({ elements: data.elements });
-        } else {
-          excalidrawAPI.resetScene();
-        }
-      });
-  }, [topic, excalidrawAPI]);
+  if (currentPath === "/editor" || currentPath.startsWith("/editor/")) {
+    return <EditorPage />;
+  }
 
-  const generate = async (selectedTopic?: string) => {
-    const targetTopic = (selectedTopic ?? topic).trim();
-    if (!targetTopic || !excalidrawAPI) return;
+  return <LandingPage />;
+}
 
-    if (selectedTopic) setTopic(selectedTopic);
-    setLoading(true);
-    setError("");
+function LandingPage() {
+  const [loggingIn, setLoggingIn] = useState(false);
 
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: targetTopic }),
-      });
-      if (!res.ok) throw new Error(`Generation failed (${res.status})`);
-      const skeleton = await res.json();
-      const elements = convertToExcalidrawElements(skeleton);
-      excalidrawAPI.updateScene({ elements });
-    } catch (e) {
-      setError("Failed to generate diagram.");
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const signIn = () => {
+    setLoggingIn(true);
 
-  const onChange = (
-    _elements: readonly any[],
-    appState: any,
-  ) => {
-    // Keep panel theme in sync with Excalidraw
-    if (appState.theme && appState.theme !== theme) {
-      setTheme(appState.theme);
-    }
-
-    if (!excalidrawAPI || !topic) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const elements = excalidrawAPI.getSceneElements();
-      fetch("/api/saveScene", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, elements }),
-      });
-    }, 1500);
+    window.location.assign(
+      "/.auth/login/github?post_login_redirect_uri=/editor",
+    );
   };
 
   return (
-    <div className={`app-shell theme--${theme}`}>
-      <a className="platform-logout" href="/.auth/logout">
-        Log out
-      </a>
-      <section className={`exc-panel ${panelOpen ? "" : "is-collapsed"}`}>
-        {panelOpen ? (
-          <>
-            <div className="exc-header">
-              <span className="exc-title">AI Diagram</span>
-              <button
-                className="exc-icon-btn"
-                onClick={() => setPanelOpen(false)}
-                title="Collapse panel"
-              >
-                ×
-              </button>
-            </div>
+    <main className="landing-page">
+      <div className="landing-grid" />
 
-            <form
-              className="exc-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                generate();
-              }}
+      <nav className="landing-nav">
+        <a className="brand" href="/" aria-label="AI Diagram home">
+          <span className="brand-mark">✦</span>
+          <span className="brand-text">AI Diagram</span>
+        </a>
+
+        <button
+          type="button"
+          className="nav-login"
+          onClick={signIn}
+          disabled={loggingIn}
+        >
+          {loggingIn ? "Opening GitHub..." : "Sign in"}
+        </button>
+      </nav>
+
+      <section className="hero-section">
+        <div className="hero-copy">
+          <div className="eyebrow">
+            <span className="eyebrow-dot" />
+            Your private visual workspace
+          </div>
+
+          <h1>
+            Think clearly.
+            <span> Draw freely.</span>
+          </h1>
+
+          <p className="hero-description">
+            A private, distraction-free canvas for diagrams, system design,
+            flowcharts, learning notes, and visual thinking.
+          </p>
+
+          <div className="hero-actions">
+            <button
+              type="button"
+              className="primary-cta"
+              onClick={signIn}
+              disabled={loggingIn}
             >
-              <input
-                className="exc-input"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="Topic..."
-                disabled={loading}
-              />
-              <button
-                type="submit"
-                className="exc-btn-primary"
-                disabled={loading || !topic.trim()}
-                aria-label="Generate diagram"
-                title="Generate diagram"
-              >
-                {loading ? "..." : "↵"}
-              </button>
-            </form>
+              <span>{loggingIn ? "Opening GitHub..." : "Start creating"}</span>
+              <span className="cta-arrow">→</span>
+            </button>
 
-            <div className="exc-chips">
-              {SUGGESTIONS.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className="exc-chip"
-                  disabled={loading}
-                  onClick={() => generate(item)}
-                >
-                  {item}
-                </button>
-              ))}
+            <span className="secure-note">
+              <span>⌁</span>
+              Private workspace · GitHub sign-in
+            </span>
+          </div>
+
+          <div className="hero-stats">
+            <div>
+              <strong>∞</strong>
+              <span>Infinite canvas</span>
             </div>
 
-            {error && <div className="exc-error">{error}</div>}
-          </>
-        ) : (
-          <button
-            className="exc-trigger"
-            onClick={() => setPanelOpen(true)}
-            title="Expand AI generator"
-          >
-            ✦ AI
-          </button>
-        )}
+            <div>
+              <strong>✎</strong>
+              <span>Draw freely</span>
+            </div>
+
+            <div>
+              <strong>🔒</strong>
+              <span>Login protected</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="hero-visual" aria-hidden="true">
+          <div className="floating-tag tag-private">🔒 Private workspace</div>
+          <div className="floating-tag tag-draw">✎ Start drawing</div>
+
+          <div className="canvas-preview">
+            <div className="preview-topbar">
+              <div className="preview-logo">
+                <span>✦</span>
+                AI Diagram
+              </div>
+
+              <div className="preview-tools">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </div>
+
+              <div className="preview-avatar">U</div>
+            </div>
+
+            <div className="preview-board">
+              <div className="preview-board-title">
+                <span className="title-sparkle">✦</span>
+                System Design
+              </div>
+
+              <div className="diagram-line line-one" />
+              <div className="diagram-line line-two" />
+              <div className="diagram-line line-three" />
+
+              <div className="diagram-node preview-client-node">
+                <span className="node-icon">◉</span>
+                <span>Client</span>
+              </div>
+
+              <div className="diagram-node preview-api-node">
+                <span className="node-icon">◇</span>
+                <span>API</span>
+              </div>
+
+              <div className="diagram-node preview-service-node">
+                <span className="node-icon">⚙</span>
+                <span>Service</span>
+              </div>
+
+              <div className="diagram-node preview-db-node">
+                <span className="node-icon">▦</span>
+                <span>Database</span>
+              </div>
+
+              <aside className="preview-notes">
+                <div className="notes-heading">
+                  <span>Notes</span>
+                  <span className="notes-dot" />
+                </div>
+
+                <div className="note-line note-line-wide" />
+                <div className="note-line" />
+                <div className="note-line note-line-medium" />
+
+                <div className="note-bullets">
+                  <span>• Client sends a request</span>
+                  <span>• API validates input</span>
+                  <span>• Service handles logic</span>
+                  <span>• Database stores data</span>
+                </div>
+              </aside>
+
+              <div className="preview-cursor">
+                <span>✦</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
+      <section className="feature-section">
+        <article className="feature-card">
+          <div className="feature-icon feature-icon-purple">∞</div>
+          <h2>Infinite canvas</h2>
+          <p>
+            Brainstorm, sketch, connect ideas, and zoom out without running
+            into page boundaries.
+          </p>
+        </article>
+
+        <article className="feature-card">
+          <div className="feature-icon feature-icon-blue">✎</div>
+          <h2>Built for visual thought</h2>
+          <p>
+            Use Excalidraw’s familiar drawing tools for architecture diagrams,
+            notes, and flowcharts.
+          </p>
+        </article>
+
+        <article className="feature-card">
+          <div className="feature-icon feature-icon-green">🔒</div>
+          <h2>Private by default</h2>
+          <p>
+            The editor is behind your GitHub login. Visitors cannot open the
+            workspace directly.
+          </p>
+        </article>
+      </section>
+
+      <footer className="landing-footer">
+        <span>Your private Excalidraw workspace.</span>
+        <span>AI generation and cloud sync coming next.</span>
+      </footer>
+    </main>
+  );
+}
+
+function EditorPage() {
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  const logout = () => {
+    window.location.assign(
+      "/.auth/logout?post_logout_redirect_uri=/",
+    );
+  };
+
+  return (
+    <div className={`editor-shell theme--${theme}`}>
       <Excalidraw
-        excalidrawAPI={(api) => setExcalidrawAPI(api)}
-        onChange={onChange}
+        onChange={(_elements, appState) => {
+          if (appState.theme === "light" || appState.theme === "dark") {
+            setTheme(appState.theme);
+          }
+        }}
       />
+
+      <div className="editor-floating-actions">
+        <a href="/" className="editor-home-link" title="Back to home">
+          <span className="editor-home-mark">✦</span>
+          <span>AI Diagram</span>
+        </a>
+
+        <button
+          type="button"
+          className="platform-logout"
+          onClick={logout}
+          title="Log out of this workspace"
+        >
+          <span className="logout-icon">↪</span>
+          Log out
+        </button>
+      </div>
     </div>
   );
 }

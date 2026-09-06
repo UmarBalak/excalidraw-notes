@@ -1,18 +1,30 @@
 {
   "routes": [
     {
-      "route": "/api/*",
+      "route": "/editor",
       "allowedRoles": ["authenticated"]
     },
     {
-      "route": "/*",
+      "route": "/editor/*",
       "allowedRoles": ["authenticated"]
     }
   ],
   "responseOverrides": {
     "401": {
-      "redirect": "/.auth/login/github",
+      "redirect": "/",
       "statusCode": 302
     }
+  },
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/assets/*",
+      "/*.{css,js,map,png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,eot}"
+    ]
+  },
+  "globalHeaders": {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
   }
 }
