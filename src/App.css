@@ -33,6 +33,26 @@
                 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
+.platform-logout {
+  position: absolute;
+  z-index: 20;
+  top: 64px;
+  right: 16px;
+  padding: 6px 10px;
+  color: var(--exc-text-muted);
+  background: var(--exc-bg);
+  border: 1px solid var(--exc-border);
+  border-radius: var(--exc-radius);
+  box-shadow: var(--exc-shadow);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.platform-logout:hover {
+  color: var(--exc-text);
+  background: var(--exc-hover);
+}
+
 /* ── Panel ─────────────────────────────────────────── */
 .exc-panel {
   position: absolute;

@@ -78,6 +78,9 @@ export default function App() {
 
   return (
     <div className={`app-shell theme--${theme}`}>
+      <a className="platform-logout" href="/.auth/logout">
+        Log out
+      </a>
       <section className={`exc-panel ${panelOpen ? "" : "is-collapsed"}`}>
         {panelOpen ? (
           <>
