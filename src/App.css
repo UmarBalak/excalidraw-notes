@@ -874,6 +874,109 @@ button {
   overflow: hidden;
 }
 
+.editor-ai-panel {
+  position: fixed;
+  top: 16px;
+  left: 64px;
+  z-index: 30;
+  width: min(360px, calc(100vw - 88px));
+  padding: 11px;
+  color: #393347;
+  border: 1px solid rgba(99, 91, 120, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 20px rgba(56, 48, 82, 0.11);
+  backdrop-filter: blur(14px);
+}
+
+.theme--dark .editor-ai-panel {
+  color: #eeeaf8;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(38, 35, 48, 0.92);
+}
+
+.editor-ai-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.editor-ai-title {
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.editor-scene-picker {
+  width: 100%;
+  height: 30px;
+  margin-bottom: 7px;
+  padding: 0 8px;
+  color: inherit;
+  border: 1px solid rgba(99, 91, 120, 0.2);
+  border-radius: 7px;
+  outline: none;
+  background: transparent;
+  font-size: 11px;
+}
+
+.editor-scene-picker:focus {
+  border-color: #7964e8;
+  box-shadow: 0 0 0 3px rgba(121, 100, 232, 0.14);
+}
+
+.editor-save-state {
+  color: #4d9b78;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.editor-ai-form {
+  display: flex;
+  gap: 6px;
+}
+
+.editor-topic-input {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  padding: 0 9px;
+  color: inherit;
+  border: 1px solid rgba(99, 91, 120, 0.2);
+  border-radius: 7px;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+}
+
+.editor-topic-input:focus {
+  border-color: #7964e8;
+  box-shadow: 0 0 0 3px rgba(121, 100, 232, 0.14);
+}
+
+.editor-generate-button {
+  height: 32px;
+  padding: 0 11px;
+  color: #fff;
+  border: 0;
+  border-radius: 7px;
+  background: #6753d7;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.editor-generate-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.editor-ai-error {
+  margin: 8px 0 0;
+  color: #a33f4e;
+  font-size: 11px;
+}
+
 /*
   Excalidraw owns:
   - top-left menu
@@ -988,6 +1091,12 @@ button {
 }
 
 @media (max-width: 600px) {
+  .editor-ai-panel {
+    top: 12px;
+    left: 12px;
+    width: calc(100vw - 24px);
+  }
+
   .editor-floating-actions {
     left: 10px;
     bottom: 15px;

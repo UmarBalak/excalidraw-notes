@@ -34,7 +34,7 @@ function getScenesContainer() {
 
   const client = new CosmosClient(connectionString);
 
-  return client.database("NotesDB").container("Scenes");
+  return client.database("ExcalidrawNotesDB").container("Scenes");
 }
 
 function buildSceneId(userId, topic) {

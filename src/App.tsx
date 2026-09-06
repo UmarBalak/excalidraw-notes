@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import {
+  Excalidraw,
+  convertToExcalidrawElements,
+} from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import "./App.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+type SceneSummary = {
+  topic: string;
+  updatedAt: string;
+};
 
 export default function App() {
   const currentPath = window.location.pathname;
@@ -216,16 +224,34 @@ function EditorPage() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const topic = new URLSearchParams(window.location.search).get("topic")?.trim() || "Untitled";
+  const initialTopic =
+    new URLSearchParams(window.location.search).get("topic")?.trim() ||
+    "Untitled";
+  const [topic, setTopic] = useState(initialTopic);
+  const [scenes, setScenes] = useState<SceneSummary[]>([]);
+  const [loadingScene, setLoadingScene] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
   const sceneLoaded = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  const refreshScenes = () => {
+    fetch("/api/listScenes")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((sceneList) => {
+        setScenes(Array.isArray(sceneList) ? sceneList : []);
+      })
+      .catch((error) => console.error("Unable to list workspaces:", error));
+  };
+
+  const loadScene = (selectedTopic: string) => {
     if (!excalidrawAPI) return;
 
+    setLoadingScene(true);
+    setError("");
     sceneLoaded.current = false;
 
-    fetch(`/api/getScene?topic=${encodeURIComponent(topic)}`)
+    fetch(`/api/getScene?topic=${encodeURIComponent(selectedTopic)}`)
       .then((response) => (response.ok ? response.json() : null))
       .then((scene) => {
         if (scene?.elements) {
@@ -239,21 +265,83 @@ function EditorPage() {
               theme: savedAppState.theme,
             },
           });
+        } else {
+          excalidrawAPI.resetScene();
         }
+
+        setTopic(selectedTopic);
+        window.history.replaceState(
+          null,
+          "",
+          `/editor?topic=${encodeURIComponent(selectedTopic)}`,
+        );
 
         if (scene?.appState?.theme === "light" || scene?.appState?.theme === "dark") {
           setTheme(scene.appState.theme);
         }
       })
-      .catch((error) => console.error("Unable to load workspace:", error))
+      .catch((error) => {
+        console.error("Unable to load workspace:", error);
+        setError("Unable to load that workspace.");
+      })
       .finally(() => {
         sceneLoaded.current = true;
+        setLoadingScene(false);
       });
+  };
+
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+
+    loadScene(initialTopic);
+    refreshScenes();
 
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [excalidrawAPI, topic]);
+  }, [excalidrawAPI, initialTopic]);
+
+  const generateDiagram = async () => {
+    const targetTopic = topic.trim();
+    if (!targetTopic || !excalidrawAPI) return;
+
+    setGenerating(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ topic: targetTopic }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || `Generation failed (${response.status})`);
+      }
+
+      const skeleton = await response.json();
+      excalidrawAPI.updateScene({
+        elements: convertToExcalidrawElements(skeleton),
+      });
+      window.history.replaceState(
+        null,
+        "",
+        `/editor?topic=${encodeURIComponent(targetTopic)}`,
+      );
+    } catch (generationError) {
+      console.error("Unable to generate diagram:", generationError);
+      setError(
+        generationError instanceof Error
+          ? generationError.message
+          : "Unable to generate diagram.",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const logout = () => {
     window.location.assign(
@@ -263,6 +351,59 @@ function EditorPage() {
 
   return (
     <div className={`editor-shell theme--${theme}`}>
+      <section className="editor-ai-panel" aria-label="AI diagram generator">
+        <div className="editor-ai-heading">
+          <span className="editor-ai-title">AI Diagram</span>
+          <span className="editor-save-state">Cloud sync on</span>
+        </div>
+
+        <select
+          className="editor-scene-picker"
+          value={scenes.some((scene) => scene.topic === topic) ? topic : ""}
+          onChange={(event) => {
+            if (event.target.value) loadScene(event.target.value);
+          }}
+          disabled={loadingScene || generating}
+          aria-label="Open saved canvas"
+        >
+          <option value="">
+            {scenes.length ? "Open saved canvas..." : "No saved canvases yet"}
+          </option>
+          {scenes.map((scene) => (
+            <option key={scene.topic} value={scene.topic}>
+              {scene.topic}
+            </option>
+          ))}
+        </select>
+
+        <form
+          className="editor-ai-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void generateDiagram();
+          }}
+        >
+          <input
+            className="editor-topic-input"
+            value={topic}
+            onChange={(event) => setTopic(event.target.value)}
+            placeholder="Describe a diagram..."
+            maxLength={180}
+            disabled={generating}
+          />
+          <button
+            className="editor-generate-button"
+            type="submit"
+            disabled={generating || !topic.trim()}
+            title="Generate diagram"
+          >
+            {generating ? "..." : "Generate"}
+          </button>
+        </form>
+
+        {error && <p className="editor-ai-error">{error}</p>}
+      </section>
+
       <Excalidraw
         excalidrawAPI={(api) => setExcalidrawAPI(api)}
         onChange={(_elements, appState) => {
@@ -290,7 +431,11 @@ function EditorPage() {
                   theme: currentAppState.theme,
                 },
               }),
-            }).catch((error) => console.error("Unable to save workspace:", error));
+            })
+              .then((response) => {
+                if (response.ok) refreshScenes();
+              })
+              .catch((error) => console.error("Unable to save workspace:", error));
           }, 1000);
         }}
       />
