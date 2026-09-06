@@ -966,6 +966,34 @@ button {
   font-weight: 700;
 }
 
+.editor-save-button {
+  height: 32px;
+  padding: 0 10px;
+  color: #5d5669;
+  border: 1px solid rgba(99, 91, 120, 0.2);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.editor-save-button:hover:not(:disabled) {
+  color: #403b4d;
+  border-color: rgba(103, 83, 215, 0.45);
+  background: rgba(103, 83, 215, 0.07);
+}
+
+.theme--dark .editor-save-button {
+  color: #e0dbe9;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.editor-save-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .editor-generate-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;

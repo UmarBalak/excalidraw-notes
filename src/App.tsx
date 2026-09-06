@@ -231,6 +231,8 @@ function EditorPage() {
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [loadingScene, setLoadingScene] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("Cloud sync on");
   const [error, setError] = useState("");
   const sceneLoaded = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -343,6 +345,42 @@ function EditorPage() {
     }
   };
 
+  const saveScene = async () => {
+    if (!excalidrawAPI || !topic.trim()) return;
+
+    setSaving(true);
+    setSaveMessage("Saving...");
+
+    try {
+      const currentAppState = excalidrawAPI.getAppState();
+      const response = await fetch("/api/saveScene", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          elements: excalidrawAPI.getSceneElements(),
+          appState: {
+            viewBackgroundColor: currentAppState.viewBackgroundColor,
+            gridSize: currentAppState.gridSize,
+            theme: currentAppState.theme,
+          },
+        }),
+      });
+
+      if (!response.ok) throw new Error(`Save failed (${response.status})`);
+
+      setSaveMessage("Saved");
+      refreshScenes();
+    } catch (saveError) {
+      console.error("Unable to save workspace:", saveError);
+      setSaveMessage("Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const logout = () => {
     window.location.assign(
       "/.auth/logout?post_logout_redirect_uri=/",
@@ -354,7 +392,7 @@ function EditorPage() {
       <section className="editor-ai-panel" aria-label="AI diagram generator">
         <div className="editor-ai-heading">
           <span className="editor-ai-title">AI Diagram</span>
-          <span className="editor-save-state">Cloud sync on</span>
+          <span className="editor-save-state">{saveMessage}</span>
         </div>
 
         <select
@@ -399,6 +437,15 @@ function EditorPage() {
           >
             {generating ? "..." : "Generate"}
           </button>
+          <button
+            className="editor-save-button"
+            type="button"
+            onClick={() => void saveScene()}
+            disabled={saving || loadingScene || !topic.trim()}
+            title="Save canvas"
+          >
+            {saving ? "..." : "Save"}
+          </button>
         </form>
 
         {error && <p className="editor-ai-error">{error}</p>}
@@ -415,27 +462,7 @@ function EditorPage() {
 
           if (saveTimer.current) clearTimeout(saveTimer.current);
           saveTimer.current = setTimeout(() => {
-            const currentAppState = excalidrawAPI.getAppState();
-
-            fetch("/api/saveScene", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                topic,
-                elements: excalidrawAPI.getSceneElements(),
-                appState: {
-                  viewBackgroundColor: currentAppState.viewBackgroundColor,
-                  gridSize: currentAppState.gridSize,
-                  theme: currentAppState.theme,
-                },
-              }),
-            })
-              .then((response) => {
-                if (response.ok) refreshScenes();
-              })
-              .catch((error) => console.error("Unable to save workspace:", error));
+            void saveScene();
           }, 1000);
         }}
       />
