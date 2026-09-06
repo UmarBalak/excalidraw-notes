@@ -7,6 +7,10 @@
     {
       "route": "/editor/*",
       "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/api/*",
+      "allowedRoles": ["authenticated"]
     }
   ],
   "responseOverrides": {
@@ -19,6 +23,7 @@
     "rewrite": "/index.html",
     "exclude": [
       "/assets/*",
+      "/api/*",
       "/*.{css,js,map,png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,eot}"
     ]
   },

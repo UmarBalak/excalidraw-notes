@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Excalidraw } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import "./App.css";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 export default function App() {
   const currentPath = window.location.pathname;
@@ -212,7 +213,47 @@ function LandingPage() {
 }
 
 function EditorPage() {
+  const [excalidrawAPI, setExcalidrawAPI] =
+    useState<ExcalidrawImperativeAPI | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const topic = new URLSearchParams(window.location.search).get("topic")?.trim() || "Untitled";
+  const sceneLoaded = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+
+    sceneLoaded.current = false;
+
+    fetch(`/api/getScene?topic=${encodeURIComponent(topic)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((scene) => {
+        if (scene?.elements) {
+          const savedAppState = scene.appState || {};
+
+          excalidrawAPI.updateScene({
+            elements: scene.elements,
+            appState: {
+              viewBackgroundColor: savedAppState.viewBackgroundColor,
+              gridSize: savedAppState.gridSize,
+              theme: savedAppState.theme,
+            },
+          });
+        }
+
+        if (scene?.appState?.theme === "light" || scene?.appState?.theme === "dark") {
+          setTheme(scene.appState.theme);
+        }
+      })
+      .catch((error) => console.error("Unable to load workspace:", error))
+      .finally(() => {
+        sceneLoaded.current = true;
+      });
+
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [excalidrawAPI, topic]);
 
   const logout = () => {
     window.location.assign(
@@ -223,10 +264,34 @@ function EditorPage() {
   return (
     <div className={`editor-shell theme--${theme}`}>
       <Excalidraw
+        excalidrawAPI={(api) => setExcalidrawAPI(api)}
         onChange={(_elements, appState) => {
           if (appState.theme === "light" || appState.theme === "dark") {
             setTheme(appState.theme);
           }
+
+          if (!excalidrawAPI || !sceneLoaded.current) return;
+
+          if (saveTimer.current) clearTimeout(saveTimer.current);
+          saveTimer.current = setTimeout(() => {
+            const currentAppState = excalidrawAPI.getAppState();
+
+            fetch("/api/saveScene", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                topic,
+                elements: excalidrawAPI.getSceneElements(),
+                appState: {
+                  viewBackgroundColor: currentAppState.viewBackgroundColor,
+                  gridSize: currentAppState.gridSize,
+                  theme: currentAppState.theme,
+                },
+              }),
+            }).catch((error) => console.error("Unable to save workspace:", error));
+          }, 1000);
         }}
       />
 
