@@ -163,7 +163,8 @@ app.http("saveScene", {
       return {
         status: 500,
         jsonBody: {
-          error: "Unable to save the workspace right now."
+          error: "Unable to save the workspace right now.",
+          debug: error?.message || String(error)
         }
       };
     }
