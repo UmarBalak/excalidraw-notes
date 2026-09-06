@@ -245,13 +245,23 @@ function simplifySceneForPrompt(elements: readonly any[]) {
 
       if (el.width) item.width = Math.round(el.width);
       if (el.height) item.height = Math.round(el.height);
-      if (el.type === "text") item.text = el.text;
+      if (el.type === "text") {
+        item.text = el.text;
+        if (el.fontSize) item.fontSize = el.fontSize;
+      }
 
       if (el.type === "arrow") {
         const startId = el.startBinding?.elementId;
         const endId = el.endBinding?.elementId;
         if (startId) item.start = { id: startId };
         if (endId) item.end = { id: endId };
+      }
+
+      if (el.type === "line" && Array.isArray(el.points)) {
+        item.points = el.points.map((point: { x: number; y: number }) => ({
+          x: Math.round(point.x),
+          y: Math.round(point.y),
+        }));
       }
 
       const boundText = boundTextByContainer.get(el.id);
@@ -397,7 +407,9 @@ function EditorPage() {
         typeof convertToExcalidrawElements
       >[0];
       excalidrawAPI.updateScene({
-        elements: convertToExcalidrawElements(skeleton),
+        elements: convertToExcalidrawElements(skeleton, {
+          regenerateIds: false,
+        }),
       });
       setSaveMessage(
         existingElements.length
