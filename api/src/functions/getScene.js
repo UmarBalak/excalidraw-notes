@@ -90,7 +90,7 @@ app.http("getScene", {
       try {
         /*
          * This requires:
-         * Database: NotesDB
+         * Database: ExcalidrawNotesDB
          * Container: Scenes
          * Partition key: /userId
          */

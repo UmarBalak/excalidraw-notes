@@ -151,7 +151,14 @@ app.http("saveScene", {
         }
       };
     } catch (error) {
-      console.error("saveScene failed:", error);
+      console.error("saveScene failed:", JSON.stringify({
+        name: error?.name,
+        message: error?.message,
+        code: error?.code,
+        statusCode: error?.statusCode,
+        substatus: error?.substatus,
+        stack: error?.stack,
+      }));
 
       return {
         status: 500,
