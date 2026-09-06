@@ -361,12 +361,41 @@ function EditorPage() {
         body: JSON.stringify({ topic: targetInstruction, existingElements }),
       });
 
-      if (!response.ok) {
-        const result = await response.json().catch(() => null);
-        throw new Error(result?.error || `Generation failed (${response.status})`);
+      const responseText = await response.text();
+      let responseBody: unknown = responseText;
+
+      try {
+        responseBody = responseText ? JSON.parse(responseText) : null;
+      } catch (parseError) {
+        console.error("[API] POST /api/generate returned invalid JSON", {
+          status: response.status,
+          parseError,
+          responseText: responseText.slice(0, 1000),
+        });
       }
 
-      const skeleton = await response.json();
+      console.info("[API] POST /api/generate", {
+        status: response.status,
+        ok: response.ok,
+        body: responseBody,
+      });
+
+      if (!response.ok) {
+        const message =
+          typeof responseBody === "object" && responseBody !== null &&
+          "error" in responseBody
+            ? String(responseBody.error)
+            : `Generation failed (${response.status})`;
+        throw new Error(message);
+      }
+
+      if (!Array.isArray(responseBody)) {
+        throw new Error("Generation returned an invalid element list.");
+      }
+
+      const skeleton = responseBody as Parameters<
+        typeof convertToExcalidrawElements
+      >[0];
       excalidrawAPI.updateScene({
         elements: convertToExcalidrawElements(skeleton),
       });
@@ -377,7 +406,7 @@ function EditorPage() {
       );
 
     } catch (generationError) {
-      console.error("Unable to generate diagram:", generationError);
+      console.error("[API] POST /api/generate failed", generationError);
       setError(
         generationError instanceof Error
           ? generationError.message

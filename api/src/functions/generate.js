@@ -1,4 +1,5 @@
 const { app } = require("@azure/functions");
+const { randomUUID } = require("crypto");
 
 const CREATE_INSTRUCTIONS = `
 Create an educational diagram and concise note layout for the requested topic.
@@ -156,6 +157,9 @@ app.http("generate", {
   route: "generate",
 
   handler: async (request) => {
+    const requestId = randomUUID();
+    const startedAt = Date.now();
+
     try {
       const body = await request.json();
       const topic = String(body?.topic || "").trim();
@@ -186,6 +190,14 @@ app.http("generate", {
 
       const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
       const isEdit = existingElements.length > 0;
+
+      console.info("Generate request started:", JSON.stringify({
+        requestId,
+        model,
+        mode: isEdit ? "edit" : "create",
+        topicLength: topic.length,
+        existingElementCount: existingElements.length,
+      }));
 
       const promptParts = [
         "You are a diagram generator for an Excalidraw-based note-taking application.",
@@ -225,6 +237,7 @@ app.http("generate", {
         console.error(
           "Gemini request failed:",
           JSON.stringify({
+            requestId,
             status: geminiResponse.status,
             model,
             error: geminiData?.error?.status,
@@ -243,7 +256,25 @@ app.http("generate", {
           ?.map((part) => part?.text || "")
           .join("") || "";
 
-      let skeleton = extractJsonArray(generatedText);
+      console.info("Gemini response received:", JSON.stringify({
+        requestId,
+        status: geminiResponse.status,
+        finishReason: geminiData?.candidates?.[0]?.finishReason,
+        outputLength: generatedText.length,
+      }));
+
+      let skeleton;
+
+      try {
+        skeleton = extractJsonArray(generatedText);
+      } catch (error) {
+        console.error("Gemini response parsing failed:", JSON.stringify({
+          requestId,
+          message: error?.message,
+          outputPreview: generatedText.slice(0, 1000),
+        }));
+        throw error;
+      }
 
       if (!Array.isArray(skeleton)) {
         throw new Error("The generated content was not an array.");
@@ -251,14 +282,22 @@ app.http("generate", {
 
       skeleton = sanitizeSkeleton(skeleton);
 
+      console.info("Generate request completed:", JSON.stringify({
+        requestId,
+        elementCount: skeleton.length,
+        durationMs: Date.now() - startedAt,
+      }));
+
       return { status: 200, jsonBody: skeleton };
     } catch (error) {
       console.error(
         "Generate function error:",
         JSON.stringify({
+          requestId,
           name: error?.name,
           message: error?.message,
-          stack: error?.stack
+          stack: error?.stack,
+          durationMs: Date.now() - startedAt,
         })
       );
 
