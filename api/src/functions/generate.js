@@ -1,6 +1,8 @@
 const { app } = require("@azure/functions");
 const { randomUUID } = require("crypto");
+const OpenAI = require("openai");
 
+// ====================== PROMPTS ======================
 const CREATE_INSTRUCTIONS = `
 You are a diagram generator for an Excalidraw-based note-taking application.
 
@@ -28,13 +30,13 @@ Exact shape rules:
      "x": 40,
      "y": 25,
      "text": "Your text here",
-     "fontSize": 20          // optional, 12–36
+     "fontSize": 20
    }
 
 3. Labelled blocks (rectangle / ellipse / diamond):
    {
      "id": "unique-id",
-     "type": "rectangle",    // or "ellipse" / "diamond"
+     "type": "rectangle",
      "x": 60,
      "y": 140,
      "width": 160,
@@ -46,16 +48,14 @@ Exact shape rules:
    {
      "id": "arrow-unique-id",
      "type": "arrow",
-     "x": 0,                 // can be 0
-     "y": 0,                 // can be 0
+     "x": 0,
+     "y": 0,
      "start": { "id": "source-block-id" },
      "end":   { "id": "target-block-id" }
    }
 
 VERY IMPORTANT:
-- For every rectangle / ellipse / diamond you MUST use the exact shape:
-  "label": { "text": "Short label" }
-  Never put the label in a top-level "text" field for blocks.
+- For every rectangle / ellipse / diamond you MUST use "label": { "text": "Short label" }
 - Free-form text elements use top-level "text".
 - Every arrow MUST reference real block ids that exist in the same array.
 - Prefer fewer perfect elements over many broken ones.
@@ -64,36 +64,31 @@ Layout rules:
 - One clear title text element near top-left (x≈40, y≈25, larger fontSize).
 - 3–8 meaningful blocks with good spacing.
 - Connect related blocks with directed arrows.
-- Add free-form explanatory text where it helps understanding.
+- Add free-form explanatory text where it helps.
 - Optionally add a notes rectangle on the right side.
 - Keep everything inside x: 0–1200, y: 0–600.
 - No overlapping elements.
 - Use only simple ASCII text.
-- Never invent an arrow endpoint that does not exist in the same array.
 `;
 
 const EDIT_INSTRUCTIONS = `
 You are updating an existing Excalidraw diagram.
 
 Return the COMPLETE updated JSON array (not a diff).
-Keep every unchanged element exactly as-is (same id, type, position, size, label/text, arrow endpoints).
+Keep every unchanged element exactly as-is.
 Only add, remove, or modify what the user asked for.
 
 Rules:
 - Supported types only: text, rectangle, ellipse, diamond, arrow.
 - When removing a block, also remove every arrow that references it.
-- When adding elements, give them unique new ids and place them in free space.
-- Never invent an arrow start/end id that is not present in the returned array.
+- When adding elements, give them unique new ids.
+- Never invent an arrow start/end id that is not present.
 - Keep coordinates inside x:0–1200, y:0–600.
-- Return ONLY the JSON array. No markdown, no explanation.
+- Return ONLY the JSON array.
 
 VERY IMPORTANT:
-- For every rectangle / ellipse / diamond you MUST use the exact shape:
-  "label": { "text": "Short label" }
-  Never put the label in a top-level "text" field for blocks.
-- Free-form text elements use top-level "text".
-- Every arrow MUST reference real block ids that exist in the same array.
-- Prefer fewer perfect elements over many broken ones.
+- Blocks must use "label": { "text": "..." }
+- Free-form text uses top-level "text"
 `;
 
 const OUTPUT_RULES = `
@@ -103,6 +98,7 @@ CRITICAL OUTPUT RULES:
 - Do not add any text before or after the array.
 `;
 
+// ====================== SANITIZER ======================
 function extractJsonArray(value) {
   const cleaned = String(value || "")
     .replace(/```json/gi, "")
@@ -113,22 +109,14 @@ function extractJsonArray(value) {
   const endIndex = cleaned.lastIndexOf("]");
 
   if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-    throw new Error("Gemini did not return a JSON array.");
+    throw new Error("Model did not return a JSON array.");
   }
 
   return JSON.parse(cleaned.slice(startIndex, endIndex + 1));
 }
 
-const ALLOWED_TYPES = new Set([
-  "text",
-  "rectangle",
-  "ellipse",
-  "diamond",
-  "arrow",
-]);
-
+const ALLOWED_TYPES = new Set(["text", "rectangle", "ellipse", "diamond", "arrow"]);
 const BLOCK_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
-
 const MAX_ELEMENTS = 40;
 const MAX_TEXT_LENGTH = 1200;
 const MAX_LABEL_LENGTH = 200;
@@ -148,14 +136,6 @@ function cleanText(value, maxLength) {
   return text;
 }
 
-function validCoordinate(value, maxValue) {
-  return isFiniteNumber(value) && value >= 0 && value <= maxValue;
-}
-
-function validDimension(value, maxValue) {
-  return isFiniteNumber(value) && value > 0 && value <= maxValue;
-}
-
 function sanitizeSkeleton(value) {
   if (!Array.isArray(value)) {
     throw new Error("Generated content must be an array.");
@@ -168,7 +148,6 @@ function sanitizeSkeleton(value) {
   const uniqueIds = new Set();
   const cleanedElements = [];
 
-  // ---------- First pass: clean everything we can ----------
   for (const raw of value) {
     if (!raw || typeof raw !== "object") continue;
 
@@ -177,15 +156,12 @@ function sanitizeSkeleton(value) {
 
     if (!id || !ALLOWED_TYPES.has(type) || uniqueIds.has(id)) continue;
 
-    // Force coordinates into safe range
     let x = isFiniteNumber(raw.x) ? Math.max(0, Math.min(raw.x, MAX_COORDINATE_X)) : 40;
     let y = isFiniteNumber(raw.y) ? Math.max(0, Math.min(raw.y, MAX_COORDINATE_Y)) : 40;
 
     uniqueIds.add(id);
 
-    // ----- TEXT -----
     if (type === "text") {
-      // Accept both "text" and label.text as fallback
       const text =
         cleanText(raw.text, MAX_TEXT_LENGTH) ||
         cleanText(raw.label?.text, MAX_TEXT_LENGTH);
@@ -204,13 +180,11 @@ function sanitizeSkeleton(value) {
       continue;
     }
 
-    // ----- BLOCKS (rectangle / ellipse / diamond) -----
     if (BLOCK_TYPES.has(type)) {
-      // Accept label.text OR plain text field as fallback
       const labelText =
         cleanText(raw.label?.text, MAX_LABEL_LENGTH) ||
         cleanText(raw.text, MAX_LABEL_LENGTH) ||
-        cleanText(raw.label, MAX_LABEL_LENGTH); // some models return string
+        cleanText(raw.label, MAX_LABEL_LENGTH);
 
       if (!labelText) {
         uniqueIds.delete(id);
@@ -220,7 +194,6 @@ function sanitizeSkeleton(value) {
       let width = isFiniteNumber(raw.width) ? raw.width : 160;
       let height = isFiniteNumber(raw.height) ? raw.height : 70;
 
-      // Clamp sizes
       width = Math.max(80, Math.min(width, MAX_BLOCK_WIDTH));
       height = Math.max(40, Math.min(height, MAX_BLOCK_HEIGHT));
 
@@ -236,7 +209,6 @@ function sanitizeSkeleton(value) {
       continue;
     }
 
-    // ----- ARROWS -----
     if (type === "arrow") {
       const startId = cleanText(raw.start?.id, 100) || cleanText(raw.start, 100);
       const endId = cleanText(raw.end?.id, 100) || cleanText(raw.end, 100);
@@ -257,11 +229,8 @@ function sanitizeSkeleton(value) {
     }
   }
 
-  // ---------- Second pass: drop arrows whose endpoints disappeared ----------
   const validBlockIds = new Set(
-    cleanedElements
-      .filter((el) => BLOCK_TYPES.has(el.type))
-      .map((el) => el.id)
+    cleanedElements.filter((el) => BLOCK_TYPES.has(el.type)).map((el) => el.id)
   );
 
   const finalElements = cleanedElements.filter((el) => {
@@ -269,7 +238,6 @@ function sanitizeSkeleton(value) {
     return validBlockIds.has(el.start.id) && validBlockIds.has(el.end.id);
   });
 
-  // Last safety net – if everything was rejected, throw a clear error
   if (finalElements.length === 0) {
     console.error("All elements rejected. Raw preview:", JSON.stringify(value).slice(0, 1200));
     throw new Error("No valid Excalidraw elements were generated.");
@@ -278,6 +246,17 @@ function sanitizeSkeleton(value) {
   return finalElements;
 }
 
+// ====================== OPENAI CLIENT (API Key version) ======================
+const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT;
+const apiKey = process.env.AZURE_OPENAI_API_KEY;
+
+const openai = new OpenAI({
+  baseURL: endpoint,
+  apiKey: apiKey,
+});
+
+// ====================== AZURE FUNCTION ======================
 app.http("generate", {
   methods: ["POST"],
   authLevel: "anonymous",
@@ -288,6 +267,14 @@ app.http("generate", {
     const startedAt = Date.now();
 
     try {
+      if (!apiKey) {
+        console.error("Missing AZURE_OPENAI_API_KEY");
+        return {
+          status: 500,
+          jsonBody: { error: "AI generation is not configured yet." },
+        };
+      }
+
       const body = await request.json();
       const topic = String(body?.topic || "").trim();
       const existingElements = Array.isArray(body?.existingElements)
@@ -304,22 +291,11 @@ app.http("generate", {
         };
       }
 
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        console.error("Missing GEMINI_API_KEY");
-        return {
-          status: 500,
-          jsonBody: { error: "AI generation is not configured yet." },
-        };
-      }
-
-      // Prefer a stable, cheap model. Change via Azure App Setting if needed.
-      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
       const isEdit = existingElements.length > 0;
 
       console.info("Generate request started:", {
         requestId,
-        model,
+        model: deploymentName,
         mode: isEdit ? "edit" : "create",
         topicLength: topic.length,
         existingCount: existingElements.length,
@@ -338,51 +314,20 @@ app.http("generate", {
 
       const finalPrompt = promptParts.join("\n\n");
 
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-          model
-        )}:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
-            generationConfig: {
-              temperature: 0.15,
-              responseMimeType: "application/json",
-              // Intentionally NO responseSchema – keeps it future-proof
-            },
-          }),
-        }
-      );
-
-      const geminiData = await geminiResponse.json();
-
-      if (!geminiResponse.ok) {
-        console.error("Gemini request failed:", {
-          requestId,
-          status: geminiResponse.status,
-          error: geminiData?.error,
-        });
-
-        return {
-          status: 502,
-          jsonBody: {
-            error: "The AI provider could not generate a diagram.",
-            debug: {
-              geminiStatus: geminiResponse.status,
-              geminiErrorStatus: geminiData?.error?.status,
-              geminiMessage: geminiData?.error?.message,
-              model,
-            },
+      const response = await openai.chat.completions.create({
+        model: deploymentName,
+        messages: [
+          {
+            role: "user",
+            content: finalPrompt,
           },
-        };
-      }
+        ],
+        temperature: 0.15,
+        max_tokens: 4000,
+        response_format: { type: "json_object" },
+      });
 
-      const generatedText =
-        geminiData?.candidates?.[0]?.content?.parts
-          ?.map((part) => part?.text || "")
-          .join("") || "";
+      const generatedText = response.choices?.[0]?.message?.content || "";
 
       let skeleton;
       try {
