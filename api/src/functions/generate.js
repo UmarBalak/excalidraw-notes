@@ -81,60 +81,60 @@ The array must contain Excalidraw element skeletons compatible with convertToExc
 `;
 
 const RESPONSE_SCHEMA = {
-  type: "ARRAY",
+  type: "array",
   minItems: 1,
   maxItems: 30,
   items: {
-    type: "OBJECT",
+    type: "object",
     properties: {
       id: {
-        type: "STRING"
+        type: "string"
       },
       type: {
-        type: "STRING",
+        type: "string",
         enum: ["text", "rectangle", "ellipse", "diamond", "arrow"]
       },
       x: {
-        type: "NUMBER"
+        type: "number"
       },
       y: {
-        type: "NUMBER"
+        type: "number"
       },
       width: {
-        type: "NUMBER"
+        type: "number"
       },
       height: {
-        type: "NUMBER"
+        type: "number"
       },
       text: {
-        type: "STRING"
+        type: "string"
       },
       fontSize: {
-        type: "NUMBER"
+        type: "number"
       },
       label: {
-        type: "OBJECT",
+        type: "object",
         properties: {
           text: {
-            type: "STRING"
+            type: "string"
           }
         },
         required: ["text"]
       },
       start: {
-        type: "OBJECT",
+        type: "object",
         properties: {
           id: {
-            type: "STRING"
+            type: "string"
           }
         },
         required: ["id"]
       },
       end: {
-        type: "OBJECT",
+        type: "object",
         properties: {
           id: {
-            type: "STRING"
+            type: "string"
           }
         },
         required: ["id"]
@@ -446,7 +446,16 @@ app.http("generate", {
 
         return {
           status: 502,
-          jsonBody: { error: "The AI provider could not generate a diagram." }
+          jsonBody: {
+            error: "The AI provider could not generate a diagram.",
+            // TEMP — remove once the real cause is confirmed
+            debug: {
+              geminiStatus: geminiResponse.status,
+              geminiErrorStatus: geminiData?.error?.status,
+              geminiMessage: geminiData?.error?.message,
+              model
+            }
+          }
         };
       }
 
@@ -502,7 +511,10 @@ app.http("generate", {
 
       return {
         status: 500,
-        jsonBody: { error: "Unable to generate a diagram right now." }
+        jsonBody: {
+          error: "Unable to generate a diagram right now.",
+          debug: error?.message || String(error) // TEMP — remove once confirmed
+        }
       };
     }
   }

@@ -12,6 +12,18 @@ type SceneSummary = {
   updatedAt: string;
 };
 
+// The AI only ever reads/writes these types. Anything else on the canvas
+// (freedraw strokes, lines, pasted images, frames) is invisible to it and
+// must be preserved separately across every Generate call, or it gets
+// silently dropped when the scene is replaced with the AI's response.
+const AI_MANAGED_TYPES = new Set([
+  "text",
+  "rectangle",
+  "ellipse",
+  "diamond",
+  "arrow",
+]);
+
 export default function App() {
   const currentPath = window.location.pathname;
 
@@ -221,10 +233,14 @@ function LandingPage() {
 }
 
 // Strips a live Excalidraw scene down to the same lightweight skeleton shape
-// the AI itself produces, so it can be sent back as context for edits
-// without wasting tokens on rendering internals it doesn't need.
+// the AI itself produces, so it can be sent back as context for edits.
+// Only AI-manageable types are included — foreign types (freedraw, line,
+// image, frame) are handled entirely outside this function; the AI never
+// needs to know they exist.
 function simplifySceneForPrompt(elements: readonly any[]) {
-  const visible = elements.filter((el) => !el.isDeleted);
+  const visible = elements.filter(
+    (el) => !el.isDeleted && AI_MANAGED_TYPES.has(el.type),
+  );
   const boundTextByContainer = new Map<string, string>();
 
   visible.forEach((el) => {
@@ -257,13 +273,6 @@ function simplifySceneForPrompt(elements: readonly any[]) {
         if (endId) item.end = { id: endId };
       }
 
-      if (el.type === "line" && Array.isArray(el.points)) {
-        item.points = el.points.map((point: { x: number; y: number }) => ({
-          x: Math.round(point.x),
-          y: Math.round(point.y),
-        }));
-      }
-
       const boundText = boundTextByContainer.get(el.id);
       if (boundText) item.label = { text: boundText };
 
@@ -279,9 +288,11 @@ function EditorPage() {
     new URLSearchParams(window.location.search).get("topic")?.trim() ||
     "Untitled";
   const [topic, setTopic] = useState(initialTopic);
-  // Separate from `topic` — this is what gets sent to the AI. `topic` stays
-  // the workspace's save/load name so an edit instruction never renames it.
-  const [instruction, setInstruction] = useState(initialTopic);
+  // Independent from `topic` (the workspace's save/load name) — this is
+  // only ever what you type into the "ask for a change" box. Must start
+  // empty, never pre-filled with the topic, or the topic name itself gets
+  // sent to the AI as an instruction the moment you hit Generate.
+  const [instruction, setInstruction] = useState("");
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [loadingScene, setLoadingScene] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -323,7 +334,7 @@ function EditorPage() {
         }
 
         setTopic(selectedTopic);
-        setInstruction(""); // ready for a fresh "add/remove ..." instruction
+        setInstruction("");
         setSaveMessage("Click Save to sync");
         window.history.replaceState(
           null,
@@ -359,9 +370,8 @@ function EditorPage() {
     setError("");
 
     try {
-      const existingElements = simplifySceneForPrompt(
-        excalidrawAPI.getSceneElements(),
-      );
+      const rawElements = excalidrawAPI.getSceneElements();
+      const existingElements = simplifySceneForPrompt(rawElements);
 
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -394,7 +404,7 @@ function EditorPage() {
         const message =
           typeof responseBody === "object" && responseBody !== null &&
           "error" in responseBody
-            ? String(responseBody.error)
+            ? String((responseBody as { error: unknown }).error)
             : `Generation failed (${response.status})`;
         throw new Error(message);
       }
@@ -406,10 +416,20 @@ function EditorPage() {
       const skeleton = responseBody as Parameters<
         typeof convertToExcalidrawElements
       >[0];
+
+      // Anything the AI can't represent (freedraw, lines, images, frames)
+      // never went into the request above and must be spliced back in here
+      // — otherwise a full scene replace below would wipe it out.
+      const preservedElements = rawElements.filter(
+        (el) => !el.isDeleted && !AI_MANAGED_TYPES.has(el.type),
+      );
+
+      const aiElements = convertToExcalidrawElements(skeleton, {
+        regenerateIds: false,
+      });
+
       excalidrawAPI.updateScene({
-        elements: convertToExcalidrawElements(skeleton, {
-          regenerateIds: false,
-        }),
+        elements: [...preservedElements, ...aiElements],
       });
       setSaveMessage(
         existingElements.length
