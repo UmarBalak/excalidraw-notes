@@ -252,15 +252,18 @@ function simplifySceneForPrompt(elements: readonly any[]) {
   return visible
     .filter((el) => !(el.type === "text" && el.containerId))
     .map((el) => {
-      const item: Record<string, unknown> = {
-        id: el.id,
-        type: el.type,
-        x: Math.round(el.x),
-        y: Math.round(el.y),
-      };
+      const item: Record<string, unknown> = { id: el.id, type: el.type };
 
-      if (el.width) item.width = Math.round(el.width);
-      if (el.height) item.height = Math.round(el.height);
+      // Arrows are positioned by their start/end bindings, not x/y —
+      // including x/y for them is meaningless and was leaking NaN -> null
+      // into the payload. Every other type still needs a real position.
+      if (el.type !== "arrow") {
+        item.x = Number.isFinite(el.x) ? Math.round(el.x) : 0;
+        item.y = Number.isFinite(el.y) ? Math.round(el.y) : 0;
+      }
+
+      if (Number.isFinite(el.width)) item.width = Math.round(el.width);
+      if (Number.isFinite(el.height)) item.height = Math.round(el.height);
       if (el.type === "text") {
         item.text = el.text;
         if (el.fontSize) item.fontSize = el.fontSize;

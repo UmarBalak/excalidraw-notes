@@ -422,7 +422,6 @@ app.http("generate", {
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
             generationConfig: {
-              temperature: 0.25,
               responseMimeType: "application/json",
               responseSchema: RESPONSE_SCHEMA
             }
