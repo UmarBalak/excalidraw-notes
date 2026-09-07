@@ -2,127 +2,90 @@ const { app } = require("@azure/functions");
 const { randomUUID } = require("crypto");
 
 const CREATE_INSTRUCTIONS = `
-Create a complete Excalidraw diagram for the requested topic.
+You are a diagram generator for an Excalidraw-based note-taking application.
 
-Return a useful mix of these element skeletons when the topic needs them:
-- "text" for titles, captions, explanations, and free-form text.
-- "rectangle", "ellipse", or "diamond" for labelled blocks or nodes.
-- "arrow" for all relationships between blocks.
+Return ONLY a valid JSON array of element skeletons. No markdown, no code fences, no explanation.
 
-Every array item must follow this JSON shape:
-{
-  "id": "unique-stable-id",
-  "type": "text | rectangle | ellipse | diamond | arrow | line",
-  "x": 100,
-  "y": 100,
-  "width": 160,
-  "height": 70
-}
+Supported element types (use only these):
+- "text"          → free-form text / titles / captions
+- "rectangle"     → labelled blocks
+- "ellipse"       → labelled blocks
+- "diamond"       → labelled decision nodes
+- "arrow"         → directed connections between blocks
 
-Element rules:
-1. Every item requires a unique string "id" and a valid "type".
-2. Position and size values must be numbers. Use positive width and height for blocks.
-3. A standalone text item uses "text": "short text" and may use "fontSize": 16.
-4. A labelled block uses "label": { "text": "short label" }. Do not put a label in "text".
-5. An arrow uses "start": { "id": "existing-block-id" } and "end": { "id": "existing-block-id" }.
-6. Arrow and line IDs must be unique. Never reference an ID that is not in the same array.
-7. Use simple ASCII text, short labels, and explicit directed arrows.
+Exact shape rules:
+
+1. Every element MUST have:
+   - "id": unique string
+   - "type": one of the types above
+   - "x": number
+   - "y": number
+
+2. Free-form text:
+   {
+     "id": "unique-id",
+     "type": "text",
+     "x": 40,
+     "y": 25,
+     "text": "Your text here",
+     "fontSize": 20          // optional, 12–36
+   }
+
+3. Labelled blocks (rectangle / ellipse / diamond):
+   {
+     "id": "unique-id",
+     "type": "rectangle",    // or "ellipse" / "diamond"
+     "x": 60,
+     "y": 140,
+     "width": 160,
+     "height": 70,
+     "label": { "text": "Short label" }
+   }
+
+4. Arrows (must reference existing block ids):
+   {
+     "id": "arrow-unique-id",
+     "type": "arrow",
+     "x": 0,                 // can be 0
+     "y": 0,                 // can be 0
+     "start": { "id": "source-block-id" },
+     "end":   { "id": "target-block-id" }
+   }
 
 Layout rules:
-- Add one title text item near x:40, y:25.
-- Create 3 to 8 meaningful blocks arranged with clear spacing.
-- Connect related blocks with arrows in the correct direction.
-- Add free-form explanatory text when it improves understanding.
-- Add a notes rectangle on the right when the topic benefits from key details.
-- Keep all coordinates within x:0..1200 and y:0..600.
-- Do not overlap blocks, labels, or arrows unnecessarily.
-
-Example valid output:
-[
-  { "id": "title", "type": "text", "x": 40, "y": 25, "text": "System flow", "fontSize": 28 },
-  { "id": "input", "type": "rectangle", "x": 60, "y": 150, "width": 160, "height": 70, "label": { "text": "Input" } },
-  { "id": "decision", "type": "diamond", "x": 300, "y": 150, "width": 160, "height": 90, "label": { "text": "Validate?" } },
-  { "id": "output", "type": "ellipse", "x": 550, "y": 150, "width": 160, "height": 70, "label": { "text": "Output" } },
-  { "id": "input-to-decision", "type": "arrow", "start": { "id": "input" }, "end": { "id": "decision" } },
-  { "id": "decision-to-output", "type": "arrow", "start": { "id": "decision" }, "end": { "id": "output" } },
-  { "id": "caption", "type": "text", "x": 60, "y": 270, "text": "The request is validated before processing.", "fontSize": 16 },
-  { "id": "notes", "type": "rectangle", "x": 760, "y": 80, "width": 380, "height": 430, "label": { "text": "KEY NOTES\\n\\n- Important concept\\n- Main dependency\\n- Expected result" } }
-]
+- One clear title text element near top-left (x≈40, y≈25, larger fontSize).
+- 3–8 meaningful blocks with good spacing.
+- Connect related blocks with directed arrows.
+- Add free-form explanatory text where it helps understanding.
+- Optionally add a notes rectangle on the right side.
+- Keep everything inside x: 0–1200, y: 0–600.
+- No overlapping elements.
+- Use only simple ASCII text.
+- Never invent an arrow endpoint that does not exist in the same array.
 `;
 
 const EDIT_INSTRUCTIONS = `
-Update the CURRENT scene according to the EDIT INSTRUCTION.
+You are updating an existing Excalidraw diagram.
 
-The input scene and output must use this Excalidraw skeleton contract:
-- Every item has a unique string "id" and a valid "type".
-- Supported types are "text", "rectangle", "ellipse", "diamond", and "arrow". Do not use "line", "freedraw", "image", "frame", or any other type.
-- Standalone text uses "text". Labelled blocks use "label": { "text": "..." }.
-- Arrows use "start": { "id": "..." } and "end": { "id": "..." }.
+Return the COMPLETE updated JSON array (not a diff).
+Keep every unchanged element exactly as-is (same id, type, position, size, label/text, arrow endpoints).
+Only add, remove, or modify what the user asked for.
 
-Editing rules:
-1. Return the COMPLETE updated JSON array, including every element that should remain.
-2. Preserve unchanged IDs, types, positions, sizes, labels, text, and arrow endpoints exactly.
-3. Only add, remove, or modify what the instruction requests.
-4. When removing a block, also remove every arrow whose start or end references it.
-5. When adding an item, create a unique ID, place it in free space, and connect it with arrows when appropriate.
-6. When changing a label or free-form text, preserve its ID, type, position, and size.
-7. Never invent an arrow endpoint ID. Every arrow endpoint must reference an item in the returned array.
-8. Keep coordinates within x:0..1200 and y:0..600 and avoid new overlaps.
-9. Return only the JSON array. Do not return an explanation, markdown, or code fence.
+Rules:
+- Supported types only: text, rectangle, ellipse, diamond, arrow.
+- When removing a block, also remove every arrow that references it.
+- When adding elements, give them unique new ids and place them in free space.
+- Never invent an arrow start/end id that is not present in the returned array.
+- Keep coordinates inside x:0–1200, y:0–600.
+- Return ONLY the JSON array. No markdown, no explanation.
 `;
 
 const OUTPUT_RULES = `
-Return ONLY a valid JSON array.
-Do not include markdown.
-Do not include triple backticks.
-Do not explain the response.
-Do not include any text outside the JSON array.
-The array must contain Excalidraw element skeletons compatible with convertToExcalidrawElements(...).
+CRITICAL OUTPUT RULES:
+- Return ONLY a valid JSON array.
+- Do not wrap in markdown or code fences.
+- Do not add any text before or after the array.
 `;
-
-const RESPONSE_SCHEMA = {
-  type: "array",
-  minItems: 1,
-  maxItems: 30,
-  items: {
-    type: "object",
-    properties: {
-      id: { type: "string" },
-      type: {
-        type: "string",
-        enum: ["text", "rectangle", "ellipse", "diamond", "arrow"]
-      },
-      x: { type: "number" },
-      y: { type: "number" },
-      width: { type: "number" },
-      height: { type: "number" },
-      text: { type: "string" },
-      fontSize: { type: "number" },
-      label: {
-        type: "object",
-        properties: {
-          text: { type: "string" }
-        },
-        required: ["text"]
-      },
-      start: {
-        type: "object",
-        properties: {
-          id: { type: "string" }
-        },
-        required: ["id"]
-      },
-      end: {
-        type: "object",
-        properties: {
-          id: { type: "string" }
-        },
-        required: ["id"]
-      }
-    },
-    required: ["id", "type", "x", "y"]
-  }
-};
 
 function extractJsonArray(value) {
   const cleaned = String(value || "")
@@ -145,18 +108,14 @@ const ALLOWED_TYPES = new Set([
   "rectangle",
   "ellipse",
   "diamond",
-  "arrow"
+  "arrow",
 ]);
 
-const BLOCK_TYPES = new Set([
-  "rectangle",
-  "ellipse",
-  "diamond"
-]);
+const BLOCK_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
 
-const MAX_ELEMENTS = 30;
+const MAX_ELEMENTS = 40;
 const MAX_TEXT_LENGTH = 1200;
-const MAX_LABEL_LENGTH = 180;
+const MAX_LABEL_LENGTH = 200;
 const MAX_COORDINATE_X = 1200;
 const MAX_COORDINATE_Y = 600;
 const MAX_BLOCK_WIDTH = 600;
@@ -167,18 +126,9 @@ function isFiniteNumber(value) {
 }
 
 function cleanText(value, maxLength) {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const text = value
-    .replace(/[^\x20-\x7E\n\r\t]/g, "")
-    .trim();
-
-  if (!text || text.length > maxLength) {
-    return null;
-  }
-
+  if (typeof value !== "string") return null;
+  const text = value.replace(/[^\x20-\x7E\n\r\t]/g, "").trim();
+  if (!text || text.length > maxLength) return null;
   return text;
 }
 
@@ -196,71 +146,45 @@ function sanitizeSkeleton(value) {
   }
 
   if (value.length < 1 || value.length > MAX_ELEMENTS) {
-    throw new Error(
-      `Generated diagram must have between 1 and ${MAX_ELEMENTS} elements.`
-    );
+    throw new Error(`Diagram must have between 1 and ${MAX_ELEMENTS} elements.`);
   }
 
   const uniqueIds = new Set();
   const cleanedElements = [];
 
-  for (const rawElement of value) {
-    if (!rawElement || typeof rawElement !== "object") {
-      continue;
-    }
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
 
-    const id = cleanText(rawElement.id, 100);
-    const type = rawElement.type;
+    const id = cleanText(raw.id, 100);
+    const type = raw.type;
 
-    if (!id || !ALLOWED_TYPES.has(type) || uniqueIds.has(id)) {
-      continue;
-    }
-
-    if (
-      !validCoordinate(rawElement.x, MAX_COORDINATE_X) ||
-      !validCoordinate(rawElement.y, MAX_COORDINATE_Y)
-    ) {
+    if (!id || !ALLOWED_TYPES.has(type) || uniqueIds.has(id)) continue;
+    if (!validCoordinate(raw.x, MAX_COORDINATE_X) || !validCoordinate(raw.y, MAX_COORDINATE_Y)) {
       continue;
     }
 
     uniqueIds.add(id);
 
     if (type === "text") {
-      const text = cleanText(rawElement.text, MAX_TEXT_LENGTH);
-
+      const text = cleanText(raw.text, MAX_TEXT_LENGTH);
       if (!text) {
         uniqueIds.delete(id);
         continue;
       }
-
       const fontSize =
-        isFiniteNumber(rawElement.fontSize) &&
-        rawElement.fontSize >= 10 &&
-        rawElement.fontSize <= 48
-          ? rawElement.fontSize
+        isFiniteNumber(raw.fontSize) && raw.fontSize >= 12 && raw.fontSize <= 36
+          ? raw.fontSize
           : 16;
 
-      cleanedElements.push({
-        id,
-        type,
-        x: rawElement.x,
-        y: rawElement.y,
-        text,
-        fontSize
-      });
-
+      cleanedElements.push({ id, type, x: raw.x, y: raw.y, text, fontSize });
       continue;
     }
 
     if (BLOCK_TYPES.has(type)) {
-      const labelText = cleanText(
-        rawElement.label?.text,
-        MAX_LABEL_LENGTH
-      );
-
+      const labelText = cleanText(raw.label?.text, MAX_LABEL_LENGTH);
       if (
-        !validDimension(rawElement.width, MAX_BLOCK_WIDTH) ||
-        !validDimension(rawElement.height, MAX_BLOCK_HEIGHT) ||
+        !validDimension(raw.width, MAX_BLOCK_WIDTH) ||
+        !validDimension(raw.height, MAX_BLOCK_HEIGHT) ||
         !labelText
       ) {
         uniqueIds.delete(id);
@@ -270,22 +194,18 @@ function sanitizeSkeleton(value) {
       cleanedElements.push({
         id,
         type,
-        x: rawElement.x,
-        y: rawElement.y,
-        width: rawElement.width,
-        height: rawElement.height,
-        label: {
-          text: labelText
-        }
+        x: raw.x,
+        y: raw.y,
+        width: raw.width,
+        height: raw.height,
+        label: { text: labelText },
       });
-
       continue;
     }
 
     if (type === "arrow") {
-      const startId = cleanText(rawElement.start?.id, 100);
-      const endId = cleanText(rawElement.end?.id, 100);
-
+      const startId = cleanText(raw.start?.id, 100);
+      const endId = cleanText(raw.end?.id, 100);
       if (!startId || !endId || startId === endId) {
         uniqueIds.delete(id);
         continue;
@@ -294,33 +214,22 @@ function sanitizeSkeleton(value) {
       cleanedElements.push({
         id,
         type,
-        x: rawElement.x,
-        y: rawElement.y,
-        start: {
-          id: startId
-        },
-        end: {
-          id: endId
-        }
+        x: raw.x ?? 0,
+        y: raw.y ?? 0,
+        start: { id: startId },
+        end: { id: endId },
       });
     }
   }
 
+  // Second pass: only keep arrows whose endpoints actually exist
   const validBlockIds = new Set(
-    cleanedElements
-      .filter((element) => BLOCK_TYPES.has(element.type))
-      .map((element) => element.id)
+    cleanedElements.filter((el) => BLOCK_TYPES.has(el.type)).map((el) => el.id)
   );
 
-  const finalElements = cleanedElements.filter((element) => {
-    if (element.type !== "arrow") {
-      return true;
-    }
-
-    return (
-      validBlockIds.has(element.start.id) &&
-      validBlockIds.has(element.end.id)
-    );
+  const finalElements = cleanedElements.filter((el) => {
+    if (el.type !== "arrow") return true;
+    return validBlockIds.has(el.start.id) && validBlockIds.has(el.end.id);
   });
 
   if (finalElements.length === 0) {
@@ -349,39 +258,35 @@ app.http("generate", {
       if (!topic) {
         return { status: 400, jsonBody: { error: "Topic is required." } };
       }
-
       if (topic.length > 180) {
         return {
           status: 400,
-          jsonBody: { error: "Topic must be 180 characters or fewer." }
+          jsonBody: { error: "Topic must be 180 characters or fewer." },
         };
       }
 
       const apiKey = process.env.GEMINI_API_KEY;
-
       if (!apiKey) {
-        console.error("Missing GEMINI_API_KEY application setting.");
+        console.error("Missing GEMINI_API_KEY");
         return {
           status: 500,
-          jsonBody: { error: "AI generation is not configured yet." }
+          jsonBody: { error: "AI generation is not configured yet." },
         };
       }
 
+      // Prefer a stable, cheap model. Change via Azure App Setting if needed.
       const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
       const isEdit = existingElements.length > 0;
 
-      console.info("Generate request started:", JSON.stringify({
+      console.info("Generate request started:", {
         requestId,
         model,
         mode: isEdit ? "edit" : "create",
         topicLength: topic.length,
-        existingElementCount: existingElements.length,
-      }));
+        existingCount: existingElements.length,
+      });
 
-      const promptParts = [
-        "You are a diagram generator for an Excalidraw-based note-taking application.",
-        OUTPUT_RULES
-      ];
+      const promptParts = [OUTPUT_RULES];
 
       if (isEdit) {
         promptParts.push(EDIT_INSTRUCTIONS);
@@ -395,46 +300,43 @@ app.http("generate", {
       const finalPrompt = promptParts.join("\n\n");
 
       const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          model
+        )}:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
             generationConfig: {
+              temperature: 0.2,
               responseMimeType: "application/json",
-              responseSchema: RESPONSE_SCHEMA
-            }
-          })
+              // Intentionally NO responseSchema – keeps it future-proof
+            },
+          }),
         }
       );
 
       const geminiData = await geminiResponse.json();
 
       if (!geminiResponse.ok) {
-        console.error(
-          "Gemini request failed:",
-          JSON.stringify({
-            requestId,
-            status: geminiResponse.status,
-            model,
-            error: geminiData?.error?.status,
-            message: geminiData?.error?.message
-          })
-        );
+        console.error("Gemini request failed:", {
+          requestId,
+          status: geminiResponse.status,
+          error: geminiData?.error,
+        });
 
         return {
           status: 502,
           jsonBody: {
             error: "The AI provider could not generate a diagram.",
-            // TEMP — remove once the real cause is confirmed
             debug: {
               geminiStatus: geminiResponse.status,
               geminiErrorStatus: geminiData?.error?.status,
               geminiMessage: geminiData?.error?.message,
-              model
-            }
-          }
+              model,
+            },
+          },
         };
       }
 
@@ -443,58 +345,41 @@ app.http("generate", {
           ?.map((part) => part?.text || "")
           .join("") || "";
 
-      console.info("Gemini response received:", JSON.stringify({
-        requestId,
-        status: geminiResponse.status,
-        finishReason: geminiData?.candidates?.[0]?.finishReason,
-        outputLength: generatedText.length,
-      }));
-
       let skeleton;
-
       try {
         skeleton = extractJsonArray(generatedText);
-      } catch (error) {
-        console.error("Gemini response parsing failed:", JSON.stringify({
+      } catch (err) {
+        console.error("JSON extraction failed:", {
           requestId,
-          message: error?.message,
-          outputPreview: generatedText.slice(0, 1000),
-        }));
-        throw error;
-      }
-
-      if (!Array.isArray(skeleton)) {
-        throw new Error("The generated content was not an array.");
+          message: err.message,
+          preview: generatedText.slice(0, 800),
+        });
+        throw err;
       }
 
       skeleton = sanitizeSkeleton(skeleton);
 
-      console.info("Generate request completed:", JSON.stringify({
+      console.info("Generate request completed:", {
         requestId,
         elementCount: skeleton.length,
         durationMs: Date.now() - startedAt,
-      }));
+      });
 
       return { status: 200, jsonBody: skeleton };
     } catch (error) {
-      console.error(
-        "Generate function error:",
-        JSON.stringify({
-          requestId,
-          name: error?.name,
-          message: error?.message,
-          stack: error?.stack,
-          durationMs: Date.now() - startedAt,
-        })
-      );
+      console.error("Generate function error:", {
+        requestId,
+        message: error?.message,
+        durationMs: Date.now() - startedAt,
+      });
 
       return {
         status: 500,
         jsonBody: {
           error: "Unable to generate a diagram right now.",
-          debug: error?.message || String(error) // TEMP — remove once confirmed
-        }
+          debug: error?.message || String(error),
+        },
       };
     }
-  }
+  },
 });
