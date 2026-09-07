@@ -81,60 +81,60 @@ The array must contain Excalidraw element skeletons compatible with convertToExc
 `;
 
 const RESPONSE_SCHEMA = {
-  type: "array",
+  type: "ARRAY",
   minItems: 1,
   maxItems: 30,
   items: {
-    type: "object",
+    type: "OBJECT",
     properties: {
       id: {
-        type: "string"
+        type: "STRING"
       },
       type: {
-        type: "string",
+        type: "STRING",
         enum: ["text", "rectangle", "ellipse", "diamond", "arrow"]
       },
       x: {
-        type: "number"
+        type: "NUMBER"
       },
       y: {
-        type: "number"
+        type: "NUMBER"
       },
       width: {
-        type: "number"
+        type: "NUMBER"
       },
       height: {
-        type: "number"
+        type: "NUMBER"
       },
       text: {
-        type: "string"
+        type: "STRING"
       },
       fontSize: {
-        type: "number"
+        type: "NUMBER"
       },
       label: {
-        type: "object",
+        type: "OBJECT",
         properties: {
           text: {
-            type: "string"
+            type: "STRING"
           }
         },
         required: ["text"]
       },
       start: {
-        type: "object",
+        type: "OBJECT",
         properties: {
           id: {
-            type: "string"
+            type: "STRING"
           }
         },
         required: ["id"]
       },
       end: {
-        type: "object",
+        type: "OBJECT",
         properties: {
           id: {
-            type: "string"
+            type: "STRING"
           }
         },
         required: ["id"]
