@@ -1,6 +1,6 @@
 const { app } = require("@azure/functions");
 const { randomUUID } = require("crypto");
-const { AzureOpenAI } = require("openai");
+const { OpenAI } = require("openai");
 
 // ====================== PROMPTS ======================
 const CREATE_INSTRUCTIONS = `
@@ -246,17 +246,27 @@ function sanitizeSkeleton(value) {
   return finalElements;
 }
 
-// ====================== OPENAI CLIENT (API Key version) ======================
+// ====================== OPENAI CLIENT (Foundry v1 surface) ======================
+// This deployment lives on Azure AI Foundry's newer /openai/v1 endpoint style,
+// which is OpenAI-SDK-compatible and does NOT use api-version query params —
+// that's a different surface from the older AzureOpenAI/chat.completions path.
+//
+// AZURE_OPENAI_ENDPOINT must be the FULL base URL exactly as Foundry's own
+// "View code" sample shows it, including the /openai/v1 suffix, e.g.:
+//   https://<your-resource>.services.ai.azure.com/openai/v1
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
 const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT;
 const apiKey = process.env.AZURE_OPENAI_API_KEY;
-const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-10-21";
 
-const openai = new AzureOpenAI({
-  endpoint,
+if (endpoint && !endpoint.includes("/openai/v1")) {
+  console.warn(
+    "AZURE_OPENAI_ENDPOINT does not contain '/openai/v1' — copy the exact base_url from Foundry's 'View code' sample for this deployment."
+  );
+}
+
+const openai = new OpenAI({
+  baseURL: endpoint,
   apiKey: apiKey,
-  apiVersion,
-  deployment: deploymentName,
 });
 
 // ====================== AZURE FUNCTION ======================
@@ -270,8 +280,12 @@ app.http("generate", {
     const startedAt = Date.now();
 
     try {
-      if (!apiKey) {
-        console.error("Missing AZURE_OPENAI_API_KEY");
+      if (!apiKey || !endpoint || !deploymentName) {
+        console.error("Missing Azure OpenAI configuration:", {
+          hasKey: !!apiKey,
+          hasEndpoint: !!endpoint,
+          hasDeployment: !!deploymentName,
+        });
         return {
           status: 500,
           jsonBody: { error: "AI generation is not configured yet." },
@@ -317,20 +331,38 @@ app.http("generate", {
 
       const finalPrompt = promptParts.join("\n\n");
 
-      const response = await openai.chat.completions.create({
+      const response = await openai.responses.create({
         model: deploymentName,
-        messages: [
-          {
-            role: "user",
-            content: finalPrompt,
-          },
-        ],
-        temperature: 0.15,
-        max_tokens: 4000,
-        response_format: { type: "json_object" },
+        input: finalPrompt,
+        max_output_tokens: 8000, // generous — on reasoning models this budget covers internal reasoning + the visible answer combined
+        text: { format: { type: "json_object" } },
       });
 
-      const generatedText = response.choices?.[0]?.message?.content || "";
+      // Reasoning-capable models can spend the whole token budget "thinking"
+      // and return no visible message at all — catch that explicitly instead
+      // of letting it fall through as a confusing JSON-parse failure.
+      if (response.status === "incomplete") {
+        console.error("Responses API returned incomplete:", {
+          requestId,
+          reason: response.incomplete_details?.reason,
+          outputTypes: (response.output || []).map((o) => o.type),
+        });
+        throw new Error(
+          `The model didn't finish generating (${response.incomplete_details?.reason || "unknown reason"}). Try again.`
+        );
+      }
+
+      const generatedText = response.output_text || "";
+
+      if (!generatedText) {
+        console.error("Responses API returned no text output:", {
+          requestId,
+          outputTypes: (response.output || []).map((o) => o.type),
+        });
+        throw new Error(
+          "The model returned no visible text (only internal reasoning). Try again — if this keeps happening, the model may need a lower reasoning effort setting."
+        );
+      }
 
       let skeleton;
       try {
