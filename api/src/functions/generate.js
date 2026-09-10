@@ -6,8 +6,6 @@ const { OpenAI } = require("openai");
 const CREATE_INSTRUCTIONS = `
 You are a diagram generator for an Excalidraw-based note-taking application.
 
-Return ONLY a valid JSON array of element skeletons. No markdown, no code fences, no explanation.
-
 Supported element types (use only these):
 - "text"          → free-form text / titles / captions
 - "rectangle"     → labelled blocks
@@ -57,7 +55,7 @@ Exact shape rules:
 VERY IMPORTANT:
 - For every rectangle / ellipse / diamond you MUST use "label": { "text": "Short label" }
 - Free-form text elements use top-level "text".
-- Every arrow MUST reference real block ids that exist in the same array.
+- Every arrow MUST reference real block ids that exist in the same list.
 - Prefer fewer perfect elements over many broken ones.
 
 Layout rules:
@@ -69,12 +67,26 @@ Layout rules:
 - Keep everything inside x: 0–1200, y: 0–600.
 - No overlapping elements.
 - Use only simple ASCII text.
+
+Example valid output:
+{
+  "elements": [
+    { "id": "title", "type": "text", "x": 40, "y": 25, "text": "System flow", "fontSize": 28 },
+    { "id": "input", "type": "rectangle", "x": 60, "y": 150, "width": 160, "height": 70, "label": { "text": "Input" } },
+    { "id": "decision", "type": "diamond", "x": 300, "y": 150, "width": 160, "height": 90, "label": { "text": "Validate?" } },
+    { "id": "output", "type": "ellipse", "x": 550, "y": 150, "width": 160, "height": 70, "label": { "text": "Output" } },
+    { "id": "input-to-decision", "type": "arrow", "x": 0, "y": 0, "start": { "id": "input" }, "end": { "id": "decision" } },
+    { "id": "decision-to-output", "type": "arrow", "x": 0, "y": 0, "start": { "id": "decision" }, "end": { "id": "output" } },
+    { "id": "caption", "type": "text", "x": 60, "y": 270, "text": "The request is validated before processing.", "fontSize": 16 },
+    { "id": "notes", "type": "rectangle", "x": 760, "y": 80, "width": 380, "height": 430, "label": { "text": "KEY NOTES\\n\\n- Important concept\\n- Main dependency\\n- Expected result" } }
+  ]
+}
 `;
 
 const EDIT_INSTRUCTIONS = `
 You are updating an existing Excalidraw diagram.
 
-Return the COMPLETE updated JSON array (not a diff).
+Return the COMPLETE updated element list (not a diff), in the required object shape.
 Keep every unchanged element exactly as-is.
 Only add, remove, or modify what the user asked for.
 
@@ -84,7 +96,6 @@ Rules:
 - When adding elements, give them unique new ids.
 - Never invent an arrow start/end id that is not present.
 - Keep coordinates inside x:0–1200, y:0–600.
-- Return ONLY the JSON array.
 
 VERY IMPORTANT:
 - Blocks must use "label": { "text": "..." }
@@ -93,26 +104,55 @@ VERY IMPORTANT:
 
 const OUTPUT_RULES = `
 CRITICAL OUTPUT RULES:
-- Return ONLY a valid JSON array.
+- Return ONLY a valid JSON object of this exact shape: { "elements": [ ... ] }
+- The "elements" value is the array of element skeletons described below.
+- Do not return a bare array as the top-level response — it must be wrapped in an object with an "elements" key.
+- Do not add any other top-level keys.
 - Do not wrap in markdown or code fences.
-- Do not add any text before or after the array.
+- Do not add any text before or after the JSON object.
 `;
 
 // ====================== SANITIZER ======================
-function extractJsonArray(value) {
+function extractElementsArray(value) {
   const cleaned = String(value || "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
 
-  const startIndex = cleaned.indexOf("[");
-  const endIndex = cleaned.lastIndexOf("]");
+  let parsed;
 
-  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-    throw new Error("Model did not return a JSON array.");
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    // Fallback for a model that ignores instructions and adds stray text
+    // around otherwise-valid JSON — slice out the widest bracketed span.
+    const arrayStart = cleaned.indexOf("[");
+    const arrayEnd = cleaned.lastIndexOf("]");
+    const objectStart = cleaned.indexOf("{");
+    const objectEnd = cleaned.lastIndexOf("}");
+
+    if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+      parsed = JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
+    } else if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+      parsed = JSON.parse(cleaned.slice(arrayStart, arrayEnd + 1));
+    } else {
+      throw new Error("Model did not return valid JSON.");
+    }
   }
 
-  return JSON.parse(cleaned.slice(startIndex, endIndex + 1));
+  // Accept either shape: a bare array (older providers) or the
+  // { elements: [...] } object this prompt now asks for.
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  if (parsed && Array.isArray(parsed.elements)) {
+    return parsed.elements;
+  }
+
+  throw new Error(
+    'Model returned JSON, but not an array or an object with an "elements" array.'
+  );
 }
 
 const ALLOWED_TYPES = new Set(["text", "rectangle", "ellipse", "diamond", "arrow"]);
@@ -247,13 +287,6 @@ function sanitizeSkeleton(value) {
 }
 
 // ====================== OPENAI CLIENT (Foundry v1 surface) ======================
-// This deployment lives on Azure AI Foundry's newer /openai/v1 endpoint style,
-// which is OpenAI-SDK-compatible and does NOT use api-version query params —
-// that's a different surface from the older AzureOpenAI/chat.completions path.
-//
-// AZURE_OPENAI_ENDPOINT must be the FULL base URL exactly as Foundry's own
-// "View code" sample shows it, including the /openai/v1 suffix, e.g.:
-//   https://<your-resource>.services.ai.azure.com/openai/v1
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
 const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT;
 const apiKey = process.env.AZURE_OPENAI_API_KEY;
@@ -334,13 +367,10 @@ app.http("generate", {
       const response = await openai.responses.create({
         model: deploymentName,
         input: finalPrompt,
-        max_output_tokens: 8000, // generous — on reasoning models this budget covers internal reasoning + the visible answer combined
+        max_output_tokens: 8000,
         text: { format: { type: "json_object" } },
       });
 
-      // Reasoning-capable models can spend the whole token budget "thinking"
-      // and return no visible message at all — catch that explicitly instead
-      // of letting it fall through as a confusing JSON-parse failure.
       if (response.status === "incomplete") {
         console.error("Responses API returned incomplete:", {
           requestId,
@@ -360,13 +390,13 @@ app.http("generate", {
           outputTypes: (response.output || []).map((o) => o.type),
         });
         throw new Error(
-          "The model returned no visible text (only internal reasoning). Try again — if this keeps happening, the model may need a lower reasoning effort setting."
+          "The model returned no visible text (only internal reasoning). Try again."
         );
       }
 
       let skeleton;
       try {
-        skeleton = extractJsonArray(generatedText);
+        skeleton = extractElementsArray(generatedText);
       } catch (err) {
         console.error("JSON extraction failed:", {
           requestId,
