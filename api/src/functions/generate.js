@@ -1,6 +1,6 @@
 const { app } = require("@azure/functions");
 const { randomUUID } = require("crypto");
-const OpenAI = require("openai");
+const { AzureOpenAI } = require("openai");
 
 // ====================== PROMPTS ======================
 const CREATE_INSTRUCTIONS = `
@@ -250,10 +250,13 @@ function sanitizeSkeleton(value) {
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
 const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT;
 const apiKey = process.env.AZURE_OPENAI_API_KEY;
+const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-10-21";
 
-const openai = new OpenAI({
-  baseURL: endpoint,
+const openai = new AzureOpenAI({
+  endpoint,
   apiKey: apiKey,
+  apiVersion,
+  deployment: deploymentName,
 });
 
 // ====================== AZURE FUNCTION ======================
