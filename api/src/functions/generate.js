@@ -858,7 +858,7 @@ Return no text outside the JSON object.
 const ARROW_ONLY_INSTRUCTIONS = `
 You are performing a connection-repair pass on a newly created diagram.
 
-Your ONLY task is to add meaningful relationships between existing diagram nodes.
+Your ONLY task is to add meaningful relationships between the EXISTING diagram nodes.
 
 Do NOT:
 - create nodes
@@ -868,26 +868,43 @@ Do NOT:
 - create notes
 - create text
 - create groups
-- connect unrelated concepts
+- modify existing non-arrow elements
 - create decorative arrows
+- connect unrelated concepts
 
 IMPORTANT:
+The original generation produced few or zero relationships.
+Your job is to recover the diagram's obvious semantic flow.
 
-This repair pass is used only when the newly generated diagram has multiple nodes but unusually sparse relationships.
+For architecture, pipeline, process, workflow, or model diagrams:
 
-There is NO requirement to create N-1 arrows.
+1. Identify ordered processing stages from the node labels and positions.
+2. Connect consecutive stages when the relationship is clearly implied.
+3. Preserve separate branches when the diagram contains multiple flows.
+4. Connect branches when one component clearly feeds another.
+5. For a model architecture, connect the actual computation/data flow, not merely spatially adjacent boxes.
+6. If an encoder/decoder or similar split architecture exists, connect the output of the first branch to the appropriate processing stage in the second branch when clearly implied.
+7. Do not add arrows solely because two boxes are close to each other.
 
-Only create a relationship when the node labels and topic strongly support it.
-
-Prefer:
+The following kinds of relationships are appropriate:
 - flow
-- dependency
-- request/response
-- produces/consumes
-- reads_from/writes_to
-- calls
+- produces
+- consumes
 - transforms
+- depends_on
+- sends_to
+- receives_from
+- calls
 - triggers
+- leads_to
+
+For an obvious sequential architecture, prefer explicit flow relationships
+between consecutive stages.
+
+There is NO N-1 requirement.
+Do not invent relationships when the semantic connection is genuinely unclear.
+
+ONLY use the exact node IDs supplied by the caller.
 
 Return ONLY:
 
@@ -902,8 +919,7 @@ Return ONLY:
         "type": "arrow",
         "from": "source-id",
         "to": "target-id",
-        "relationshipType": "produces",
-        "label": "optional short label"
+        "relationshipType": "flow"
       }
     }
   ]
@@ -912,7 +928,6 @@ Return ONLY:
 Return no markdown.
 Return no explanation.
 `;
-
 
 // ============================================================
 // JSON PARSING
@@ -1683,8 +1698,8 @@ function rerouteNativeArrow(
   if (
     !startBlock ||
     !endBlock ||
-    !isNativeBlock(startBlock) &&
-      startBlock.type !== "rectangle"
+    !isNativeBlock(startBlock) ||
+    !isNativeBlock(endBlock)
   ) {
     return false;
   }
@@ -4709,8 +4724,16 @@ function finalizeCreatedScene(elements) {
 async function repairCreationRelationships(elements, topic, requestId) {
   const createdIR = convertNativeElementsToIR(elements);
   const nodes = createdIR
-    .filter((element) => element.kind === "node")
-    .map((element) => ({ id: element.id, label: element.label }));
+  .filter((element) => element.kind === "node")
+  .map((element) => ({
+    id: element.id,
+    label: element.label,
+    type: element.type,
+    x: element.position?.x,
+    y: element.position?.y,
+    width: element.size?.width,
+    height: element.size?.height
+  }));
   const relationships = createdIR.filter(
     (element) => element.kind === "relationship"
   );
