@@ -9,7 +9,7 @@ HARD REQUIREMENT: If you create N labelled blocks (rectangle/ellipse/diamond), y
 You are a diagram generator for an Excalidraw-based note-taking application. Your goal is a diagram that ARGUES the topic's structure visually, not one that just labels generic boxes.
 
 STEP 1 — BE SPECIFIC, NOT GENERIC
-Use real terminology from the topic itself in every label — actual component names, actual step names, actual relationships. Never use placeholder labels like "Input", "Process", "Output", "Component A/B/C", or "Step 1/2/3" unless those are literally the real names of things in this topic. A diagram of "Uber's business model" should name Rider, Driver, Payment System — not "User", "System", "Backend".
+Use real terminology from the topic itself in every label — actual component names, actual step names, actual relationships. Never use placeholder labels like "Input", "Process", "Output", "Component A/B/C", or "Step 1/2/3" unless those are literally the real names of things in this topic.
 
 STEP 2 — CHOOSE A STRUCTURE THAT MATCHES THE TOPIC
 Pick ONE of these based on how the topic's pieces actually relate — don't default to a generic left-to-right row every time:
@@ -77,20 +77,19 @@ Exact shape rules:
 VERY IMPORTANT:
 - For every rectangle / ellipse / diamond you MUST use "label": { "text": "Short label" }
 - Free-form text elements use top-level "text".
-- Every arrow MUST reference real block ids that exist in the same list, using the exact "start": { "id": "..." } / "end": { "id": "..." } shape shown above.
+- Every arrow MUST reference real block ids that exist in the same list.
 - Prefer fewer perfect elements over many broken ones — but never fewer arrows than blocks minus one.
 
 Layout rules:
 - One clear title text element near top-left (x≈40, y≈25, larger fontSize).
 - 3–8 meaningful blocks with good spacing, following the grid and gap rules above.
 - Connect related blocks with directed arrows that match your chosen structure from Step 2.
-- Add free-form explanatory text where it helps.
-- Optionally add a notes rectangle on the right side, with 2-4 SPECIFIC facts about this exact topic — not generic filler.
-- Keep everything inside x: 0–1200, y: 0–600.
+- Optionally add a notes rectangle on the right side, with 2-4 SPECIFIC facts about this exact topic.
+- Keep everything inside x: 0–6000, y: 0–3000.
 - No overlapping elements.
 - Use only simple ASCII text.
 
-Example valid output:
+Return ONLY a JSON object of this exact shape — no other top-level keys, no markdown, no text outside the object:
 {
   "elements": [
     { "id": "title", "type": "text", "x": 40, "y": 25, "text": "System flow", "fontSize": 28 },
@@ -99,108 +98,92 @@ Example valid output:
     { "id": "output", "type": "ellipse", "x": 550, "y": 150, "width": 160, "height": 70, "label": { "text": "Output" } },
     { "id": "input-to-decision", "type": "arrow", "x": 0, "y": 0, "start": { "id": "input" }, "end": { "id": "decision" } },
     { "id": "decision-to-output", "type": "arrow", "x": 0, "y": 0, "start": { "id": "decision" }, "end": { "id": "output" } },
-    { "id": "caption", "type": "text", "x": 60, "y": 270, "text": "The request is validated before processing.", "fontSize": 16 },
     { "id": "notes", "type": "rectangle", "x": 760, "y": 80, "width": 380, "height": 430, "label": { "text": "KEY NOTES\\n\\n- Important concept\\n- Main dependency\\n- Expected result" } }
   ]
 }
 `;
 
 const EDIT_INSTRUCTIONS = `
-You are updating an existing Excalidraw diagram.
+You are editing an existing Excalidraw diagram. The full current scene is preserved automatically by the system — you do NOT need to repeat elements you aren't changing.
 
-Return the COMPLETE updated element list (not a diff), in the required object shape.
-Keep every unchanged element exactly as-is — same id, position, size, label.
-Only add, remove, or modify what the user asked for.
+Return ONLY a JSON object of this exact shape — no other top-level keys, no markdown, no text outside the object:
+{ "elements": [ ... ], "removeIds": [ ... ] }
 
-When adding a new block:
-- Use a SPECIFIC label tied to this exact topic, never a generic placeholder.
-- Place it in genuinely empty space — at least 60px horizontal / 40px vertical gap from every other block.
-- Connect it with an arrow if that reflects a real relationship — new unconnected blocks should be rare.
+- "elements": include ONLY elements that are NEW, or that you are intentionally changing (repositioning, resizing, relabeling, restyling). To change an existing element, reuse its EXACT original id and give its full updated definition. Do NOT include elements you are leaving untouched — they are kept automatically.
+- "removeIds": ids of elements that should be deleted entirely. Any arrow connected to a removed id is deleted automatically — don't list those arrows separately.
+
+If the instruction asks you to redesign, reposition, or improve the visual layout of the WHOLE diagram (or ALL diagrams currently on the canvas), then EVERY existing block in that scope counts as "changing" — include ALL of them in "elements" with their new positions/sizes, using their original ids. If the current scene has multiple separate diagrams and the instruction only refers to one of them, only touch that one — leave the others out of "elements" entirely so they're preserved exactly as they are. If the instruction only asks for one small change (e.g. "add a block for X"), only include what that change actually touches.
 
 Rules:
 - Supported types only: text, rectangle, ellipse, diamond, arrow.
-- Arrows use "start": { "id": "..." } and "end": { "id": "..." }.
-- When removing a block, also remove every arrow that references it.
-- When adding elements, give them unique new ids.
-- Never invent an arrow start/end id that is not present.
-- Keep coordinates inside x:0–1200, y:0–600.
-
-VERY IMPORTANT:
-- Blocks must use "label": { "text": "..." }
-- Free-form text uses top-level "text"
+- Arrows use "start": { "id": "..." } and "end": { "id": "..." }, referencing real ids (existing or newly created in this same response).
+- Blocks must use "label": { "text": "..." }. Free-form text uses top-level "text".
+- Keep coordinates inside x:0–6000, y:0–3000.
+- Give any new element a unique id that doesn't collide with an existing one.
 `;
 
-const OUTPUT_RULES = `
-CRITICAL OUTPUT RULES:
-- Return ONLY a valid JSON object of this exact shape: { "elements": [ ... ] }
-- The "elements" value is the array of element skeletons described below.
-- Do not return a bare array as the top-level response — it must be wrapped in an object with an "elements" key.
-- Do not add any other top-level keys.
-- Do not wrap in markdown or code fences.
-- Do not add any text before or after the JSON object.
-`;
-
-const ARROW_ONLY_INSTRUCTIONS = `
-These blocks already exist on an Excalidraw canvas. Your ONLY job is to connect them with arrows based on their real relationships — do not create, rename, or describe the blocks themselves.
-
-Return ONLY a JSON object of this shape: { "elements": [ ... ] }
-Every item must be an arrow, using exactly this shape:
-{ "id": "unique-arrow-id", "type": "arrow", "x": 0, "y": 0, "start": { "id": "<one of the given block ids>" }, "end": { "id": "<one of the given block ids>" } }
-
-- "start" and "end" ids MUST come from the block id list given to you — never invent an id.
-- Create at least (number of blocks - 1) arrows connecting them meaningfully.
-- Do not return any element type other than "arrow".
-- Do not add markdown, code fences, or explanation.
-`;
-
-// ====================== SANITIZER ======================
-function extractElementsArray(value) {
+// ====================== JSON PARSING ======================
+function parseModelJson(value) {
   const cleaned = String(value || "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
 
-  let parsed;
-
   try {
-    parsed = JSON.parse(cleaned);
+    return JSON.parse(cleaned);
   } catch {
-    const arrayStart = cleaned.indexOf("[");
-    const arrayEnd = cleaned.lastIndexOf("]");
     const objectStart = cleaned.indexOf("{");
     const objectEnd = cleaned.lastIndexOf("}");
+    const arrayStart = cleaned.indexOf("[");
+    const arrayEnd = cleaned.lastIndexOf("]");
 
     if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
-      parsed = JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
-    } else if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
-      parsed = JSON.parse(cleaned.slice(arrayStart, arrayEnd + 1));
-    } else {
-      throw new Error("Model did not return valid JSON.");
+      return JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
     }
+    if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+      return JSON.parse(cleaned.slice(arrayStart, arrayEnd + 1));
+    }
+    throw new Error("Model did not return valid JSON.");
   }
+}
 
-  if (Array.isArray(parsed)) {
-    return parsed;
-  }
+function extractElementsArray(value) {
+  const parsed = parseModelJson(value);
 
-  if (parsed && Array.isArray(parsed.elements)) {
-    return parsed.elements;
-  }
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && Array.isArray(parsed.elements)) return parsed.elements;
 
   throw new Error(
     'Model returned JSON, but not an array or an object with an "elements" array.'
   );
 }
 
+function extractEditResponse(value) {
+  const parsed = parseModelJson(value);
+
+  if (Array.isArray(parsed)) {
+    // Tolerate an older-style bare array response — treat it as "nothing removed".
+    return { elements: parsed, removeIds: [] };
+  }
+
+  const elements = Array.isArray(parsed?.elements) ? parsed.elements : [];
+  const removeIds = Array.isArray(parsed?.removeIds)
+    ? parsed.removeIds.map((id) => cleanText(id, 100)).filter(Boolean)
+    : [];
+
+  return { elements, removeIds };
+}
+
+// ====================== SANITIZER ======================
 const ALLOWED_TYPES = new Set(["text", "rectangle", "ellipse", "diamond", "arrow"]);
 const BLOCK_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
-const MAX_ELEMENTS = 40;
-const MAX_TEXT_LENGTH = 1200;
-const MAX_LABEL_LENGTH = 200;
-const MAX_COORDINATE_X = 1200;
-const MAX_COORDINATE_Y = 600;
-const MAX_BLOCK_WIDTH = 600;
-const MAX_BLOCK_HEIGHT = 500;
+const MAX_ELEMENTS = 200;
+const MAX_TEXT_LENGTH = 6000;
+const MAX_LABEL_LENGTH = 1000;
+const MAX_COORDINATE_X = 6000;
+const MAX_COORDINATE_Y = 3000;
+const MAX_BLOCK_WIDTH = 3000;
+const MAX_BLOCK_HEIGHT = 2500;
 
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -214,15 +197,12 @@ function cleanText(value, maxLength) {
 }
 
 function extractEndpointId(value) {
-  if (value && typeof value === "object") {
-    return cleanText(value.id, 100);
-  }
+  if (value && typeof value === "object") return cleanText(value.id, 100);
   return cleanText(value, 100);
 }
 
-// Picks the point on `from`'s boundary closest to `to`'s center — used to
-// give arrows a real start/end point instead of leaving them at (0,0) and
-// hoping Excalidraw's own binding-based auto-routing figures it out.
+// Picks the point on `from`'s boundary closest to `to`'s center, so arrows
+// get a real start/end point instead of sitting at (0,0).
 function edgePoint(from, to) {
   const fromCenterX = from.x + from.width / 2;
   const fromCenterY = from.y + from.height / 2;
@@ -232,23 +212,37 @@ function edgePoint(from, to) {
   const dy = toCenterY - fromCenterY;
 
   if (Math.abs(dx) >= Math.abs(dy)) {
-    return {
-      x: dx >= 0 ? from.x + from.width : from.x,
-      y: fromCenterY,
-    };
+    return { x: dx >= 0 ? from.x + from.width : from.x, y: fromCenterY };
+  }
+  return { x: fromCenterX, y: dy >= 0 ? from.y + from.height : from.y };
+}
+
+// Merges what the model returned on top of the scene the frontend already
+// sent: existing elements are kept by default, "removeIds" deletes them,
+// and anything the model returns overwrites/adds by id. This is what makes
+// forgotten elements survive instead of silently disappearing.
+function mergeEditElements(existingRaw, modelRaw, removeIds) {
+  const removeSet = new Set(removeIds);
+  const merged = new Map();
+
+  for (const el of existingRaw) {
+    if (el && typeof el === "object" && typeof el.id === "string" && !removeSet.has(el.id)) {
+      merged.set(el.id, el);
+    }
+  }
+  for (const el of modelRaw) {
+    if (el && typeof el === "object" && typeof el.id === "string") {
+      merged.set(el.id, el);
+    }
   }
 
-  return {
-    x: fromCenterX,
-    y: dy >= 0 ? from.y + from.height : from.y,
-  };
+  return [...merged.values()];
 }
 
 function sanitizeSkeleton(value, { knownBlocks = new Map(), requestId = "" } = {}) {
   if (!Array.isArray(value)) {
     throw new Error("Generated content must be an array.");
   }
-
   if (value.length < 1 || value.length > MAX_ELEMENTS) {
     throw new Error(`Diagram must have between 1 and ${MAX_ELEMENTS} elements.`);
   }
@@ -259,24 +253,18 @@ function sanitizeSkeleton(value, { knownBlocks = new Map(), requestId = "" } = {
   const arrowRejectionReasons = [];
   let rawArrowAttempts = 0;
 
-  // PASS 1 — clean text/blocks fully, validate arrow endpoint ids but defer
-  // their geometry until every block's real position is known.
   for (const raw of value) {
     if (!raw || typeof raw !== "object") continue;
 
     const id = cleanText(raw.id, 100);
     const type = raw.type;
-
     if (!id || !ALLOWED_TYPES.has(type) || uniqueIds.has(id)) continue;
 
     if (type === "text") {
       const x = isFiniteNumber(raw.x) ? Math.max(0, Math.min(raw.x, MAX_COORDINATE_X)) : 40;
       const y = isFiniteNumber(raw.y) ? Math.max(0, Math.min(raw.y, MAX_COORDINATE_Y)) : 40;
-
       const text =
-        cleanText(raw.text, MAX_TEXT_LENGTH) ||
-        cleanText(raw.label?.text, MAX_TEXT_LENGTH);
-
+        cleanText(raw.text, MAX_TEXT_LENGTH) || cleanText(raw.label?.text, MAX_TEXT_LENGTH);
       if (!text) continue;
 
       const fontSize =
@@ -292,12 +280,10 @@ function sanitizeSkeleton(value, { knownBlocks = new Map(), requestId = "" } = {
     if (BLOCK_TYPES.has(type)) {
       const x = isFiniteNumber(raw.x) ? Math.max(0, Math.min(raw.x, MAX_COORDINATE_X)) : 40;
       const y = isFiniteNumber(raw.y) ? Math.max(0, Math.min(raw.y, MAX_COORDINATE_Y)) : 40;
-
       const labelText =
         cleanText(raw.label?.text, MAX_LABEL_LENGTH) ||
         cleanText(raw.text, MAX_LABEL_LENGTH) ||
         cleanText(raw.label, MAX_LABEL_LENGTH);
-
       if (!labelText) continue;
 
       let width = isFiniteNumber(raw.width) ? raw.width : 160;
@@ -312,7 +298,6 @@ function sanitizeSkeleton(value, { knownBlocks = new Map(), requestId = "" } = {
 
     if (type === "arrow") {
       rawArrowAttempts += 1;
-
       const startId = extractEndpointId(raw.start ?? raw.from ?? raw.source ?? raw.startId);
       const endId = extractEndpointId(raw.end ?? raw.to ?? raw.target ?? raw.endId);
 
@@ -330,8 +315,6 @@ function sanitizeSkeleton(value, { knownBlocks = new Map(), requestId = "" } = {
     }
   }
 
-  // PASS 2 — now that every block's real position is known, compute actual
-  // edge-to-edge geometry for each arrow instead of leaving it at (0,0).
   const blockById = new Map();
   for (const el of cleanedElements) {
     if (BLOCK_TYPES.has(el.type)) blockById.set(el.id, el);
@@ -363,10 +346,7 @@ function sanitizeSkeleton(value, { knownBlocks = new Map(), requestId = "" } = {
       type: "arrow",
       x: startPoint.x,
       y: startPoint.y,
-      points: [
-        [0, 0],
-        [endPoint.x - startPoint.x, endPoint.y - startPoint.y],
-      ],
+      points: [[0, 0], [endPoint.x - startPoint.x, endPoint.y - startPoint.y]],
       start: { id: candidate.startId },
       end: { id: candidate.endId },
     });
@@ -404,10 +384,7 @@ if (endpoint && !endpoint.includes("/openai/v1")) {
   );
 }
 
-const openai = new OpenAI({
-  baseURL: endpoint,
-  apiKey: apiKey,
-});
+const openai = new OpenAI({ baseURL: endpoint, apiKey });
 
 async function callModel(promptText, maxOutputTokens) {
   const response = await openai.responses.create({
@@ -424,26 +401,29 @@ async function callModel(promptText, maxOutputTokens) {
   }
 
   const text = response.output_text || "";
-
   if (!text) {
     throw new Error("The model returned no visible text (only internal reasoning).");
   }
-
   return text;
 }
 
-// One focused follow-up call used only when a create-mode generation comes
-// back with blocks but no arrows.
+const ARROW_ONLY_INSTRUCTIONS = `
+These blocks already exist on an Excalidraw canvas. Your ONLY job is to connect them with arrows based on their real relationships — do not create, rename, or describe the blocks themselves.
+
+Return ONLY a JSON object of this shape: { "elements": [ ... ] }
+Every item must be an arrow: { "id": "unique-arrow-id", "type": "arrow", "x": 0, "y": 0, "start": { "id": "<block id>" }, "end": { "id": "<block id>" } }
+
+- ids MUST come from the block list given to you.
+- Create at least (number of blocks - 1) arrows connecting them meaningfully.
+- Return no other element type. No markdown, no explanation.
+`;
+
 async function requestArrowsForBlocks(elements, requestId) {
   const blockSummaries = elements
     .filter((el) => BLOCK_TYPES.has(el.type))
     .map((el) => ({ id: el.id, label: el.label?.text }));
 
-  const prompt = [
-    ARROW_ONLY_INSTRUCTIONS,
-    `Blocks:\n${JSON.stringify(blockSummaries)}`,
-  ].join("\n\n");
-
+  const prompt = [ARROW_ONLY_INSTRUCTIONS, `Blocks:\n${JSON.stringify(blockSummaries)}`].join("\n\n");
   const text = await callModel(prompt, 2000);
   const rawArrows = extractElementsArray(text);
 
@@ -468,108 +448,95 @@ app.http("generate", {
     try {
       if (!apiKey || !endpoint || !deploymentName) {
         console.error("Missing Azure OpenAI configuration:", {
-          hasKey: !!apiKey,
-          hasEndpoint: !!endpoint,
-          hasDeployment: !!deploymentName,
+          hasKey: !!apiKey, hasEndpoint: !!endpoint, hasDeployment: !!deploymentName,
         });
-        return {
-          status: 500,
-          jsonBody: { error: "AI generation is not configured yet." },
-        };
+        return { status: 500, jsonBody: { error: "AI generation is not configured yet." } };
       }
 
       const body = await request.json();
       const topic = String(body?.topic || "").trim();
-      const existingElements = Array.isArray(body?.existingElements)
-        ? body.existingElements
-        : [];
+      const existingElements = Array.isArray(body?.existingElements) ? body.existingElements : [];
 
-      if (!topic) {
-        return { status: 400, jsonBody: { error: "Topic is required." } };
-      }
+      if (!topic) return { status: 400, jsonBody: { error: "Topic is required." } };
       if (topic.length > 180) {
-        return {
-          status: 400,
-          jsonBody: { error: "Topic must be 180 characters or fewer." },
-        };
+        return { status: 400, jsonBody: { error: "Topic must be 180 characters or fewer." } };
       }
 
       const isEdit = existingElements.length > 0;
 
       console.info("Generate request started:", {
-        requestId,
-        model: deploymentName,
-        mode: isEdit ? "edit" : "create",
-        topicLength: topic.length,
-        existingCount: existingElements.length,
+        requestId, model: deploymentName, mode: isEdit ? "edit" : "create",
+        topicLength: topic.length, existingCount: existingElements.length,
       });
 
-      const promptParts = [OUTPUT_RULES];
+      let elements, blockCount, arrowCount;
 
       if (isEdit) {
-        promptParts.push(EDIT_INSTRUCTIONS);
-        promptParts.push(`Current scene:\n${JSON.stringify(existingElements)}`);
-        promptParts.push(`Edit instruction: ${topic}`);
+        const promptParts = [
+          EDIT_INSTRUCTIONS,
+          `Current scene:\n${JSON.stringify(existingElements)}`,
+          `Edit instruction: ${topic}`,
+        ];
+        const generatedText = await callModel(promptParts.join("\n\n"), 8000);
+
+        let modelElements, removeIds;
+        try {
+          ({ elements: modelElements, removeIds } = extractEditResponse(generatedText));
+        } catch (err) {
+          console.error("Edit response parsing failed:", {
+            requestId, message: err.message, preview: generatedText.slice(0, 800),
+          });
+          throw err;
+        }
+
+        console.info("Edit response received:", {
+          requestId, modelElementCount: modelElements.length, removeCount: removeIds.length,
+        });
+
+        const mergedRaw = mergeEditElements(existingElements, modelElements, removeIds);
+        ({ elements, blockCount, arrowCount } = sanitizeSkeleton(mergedRaw, { requestId }));
       } else {
-        promptParts.push(CREATE_INSTRUCTIONS);
-        promptParts.push(`Requested topic: ${topic}`);
+        const promptParts = [CREATE_INSTRUCTIONS, `Requested topic: ${topic}`];
+        const generatedText = await callModel(promptParts.join("\n\n"), 8000);
+
+        let rawSkeleton;
+        try {
+          rawSkeleton = extractElementsArray(generatedText);
+        } catch (err) {
+          console.error("JSON extraction failed:", {
+            requestId, message: err.message, preview: generatedText.slice(0, 800),
+          });
+          throw err;
+        }
+
+        ({ elements, blockCount, arrowCount } = sanitizeSkeleton(rawSkeleton, { requestId }));
       }
 
-      const finalPrompt = promptParts.join("\n\n");
-      const generatedText = await callModel(finalPrompt, 8000);
-
-      let rawSkeleton;
-      try {
-        rawSkeleton = extractElementsArray(generatedText);
-      } catch (err) {
-        console.error("JSON extraction failed:", {
-          requestId,
-          message: err.message,
-          preview: generatedText.slice(0, 800),
+      if (blockCount >= 2 && arrowCount === 0) {
+        console.warn("Result has blocks but no arrows — requesting a connection pass.", {
+          requestId, blockCount,
         });
-        throw err;
-      }
-
-      let { elements, blockCount, arrowCount } = sanitizeSkeleton(rawSkeleton, { requestId });
-
-      if (!isEdit && blockCount >= 2 && arrowCount === 0) {
-        console.warn("No arrows in initial generation — requesting a connection pass.", {
-          requestId,
-          blockCount,
-        });
-
         try {
           const arrows = await requestArrowsForBlocks(elements, requestId);
           elements = [...elements, ...arrows];
           console.info("Connection pass added arrows:", { requestId, arrowsAdded: arrows.length });
         } catch (retryError) {
-          console.error("Connection pass failed, returning blocks without arrows:", {
-            requestId,
-            message: retryError.message,
-          });
+          console.error("Connection pass failed:", { requestId, message: retryError.message });
         }
       }
 
       console.info("Generate request completed:", {
-        requestId,
-        elementCount: elements.length,
-        durationMs: Date.now() - startedAt,
+        requestId, elementCount: elements.length, durationMs: Date.now() - startedAt,
       });
 
       return { status: 200, jsonBody: elements };
     } catch (error) {
       console.error("Generate function error:", {
-        requestId,
-        message: error?.message,
-        durationMs: Date.now() - startedAt,
+        requestId, message: error?.message, durationMs: Date.now() - startedAt,
       });
-
       return {
         status: 500,
-        jsonBody: {
-          error: "Unable to generate a diagram right now.",
-          debug: error?.message || String(error),
-        },
+        jsonBody: { error: "Unable to generate a diagram right now.", debug: error?.message || String(error) },
       };
     }
   },
