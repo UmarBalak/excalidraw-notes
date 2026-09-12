@@ -729,6 +729,21 @@ To change the semantic relationship:
 
 Never create a replacement relationship when updating an existing one unless necessary.
 
+To add a NEW relationship (use this exact shape — "type" is required and must be the literal string "arrow"):
+
+{
+  "op": "add",
+  "element": {
+    "id": "unique-arrow-id",
+    "kind": "relationship",
+    "type": "arrow",
+    "from": "source-id",
+    "to": "target-id",
+    "relationshipType": "produces",
+    "label": "optional short text"
+  }
+}
+
 ==================================================
 ADDING ELEMENTS
 ==================================================
@@ -3619,9 +3634,18 @@ function sanitizeIRForAdd(raw) {
   // ----------------------------------------------------------
 
   if (kind === "relationship") {
+    // "arrow" is the only relationship type this system supports — a
+    // missing/omitted "type" field is redundant info the model sometimes
+    // drops. Only reject if it's explicitly set to something else.
     if (
+      raw.type !== undefined &&
+      raw.type !== null &&
       raw.type !== "arrow"
     ) {
+      console.warn("Rejected relationship add: unexpected type field.", {
+        id: raw.id,
+        type: raw.type,
+      });
       return null;
     }
 
@@ -3640,6 +3664,11 @@ function sanitizeIRForAdd(raw) {
       !to ||
       from === to
     ) {
+      console.warn("Rejected relationship add: invalid from/to.", {
+        id: raw.id,
+        from: raw.from,
+        to: raw.to,
+      });
       return null;
     }
 
@@ -4518,7 +4547,11 @@ function filterOperationsAgainstScene(
 
     existingIds.add(element.id);
 
-    if (!isNativeArrow(element)) {
+    // Text can't be a relationship endpoint — rerouteNativeArrow only
+    // computes real geometry for rectangle/ellipse/diamond blocks. A
+    // relationship pointed at text would pass every other check and then
+    // silently render as an invisible stub arrow at (0,0).
+    if (!isNativeArrow(element) && !isNativeText(element)) {
       endpointIds.add(element.id);
     }
   }
@@ -4527,6 +4560,7 @@ function filterOperationsAgainstScene(
     if (
       operation?.op === "add" &&
       operation.element?.kind !== "relationship" &&
+      operation.element?.kind !== "text" &&
       typeof operation.element?.id === "string"
     ) {
       endpointIds.add(operation.element.id);
@@ -4572,12 +4606,22 @@ function filterOperationsAgainstScene(
           !endpointIds.has(operation.element.to) ||
           operation.element.from === operation.element.to)
       ) {
+        console.warn("Dropped relationship: endpoint not found in scene.", {
+          id: operation.element.id,
+          from: operation.element.from,
+          to: operation.element.to,
+          fromExists: endpointIds.has(operation.element.from),
+          toExists: endpointIds.has(operation.element.to),
+        });
         continue;
       }
 
       addedIds.add(id);
 
-      if (operation.element?.kind !== "relationship") {
+      if (
+        operation.element?.kind !== "relationship" &&
+        operation.element?.kind !== "text"
+      ) {
         endpointIds.add(id);
       }
 
