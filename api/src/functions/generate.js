@@ -729,6 +729,8 @@ To change the semantic relationship:
 
 Never create a replacement relationship when updating an existing one unless necessary.
 
+When asked to add or change labels on MULTIPLE existing relationships (e.g. "label all the arrows"), you MUST use one "update" operation per relationship — never delete and recreate them. Deleting an arrow and failing to recreate it correctly is the most common way arrows are lost. If you are not adding a new connection, do not use "op": "add" for relationships at all.
+
 To add a NEW relationship (use this exact shape — "type" is required and must be the literal string "arrow"):
 
 {
