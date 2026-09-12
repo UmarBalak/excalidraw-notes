@@ -254,6 +254,26 @@ function simplifySceneForPrompt(elements: readonly any[]) {
     .map((el) => {
       const item: Record<string, unknown> = { id: el.id, type: el.type };
 
+      for (const property of [
+        "backgroundColor",
+        "strokeColor",
+        "fillStyle",
+        "strokeWidth",
+        "strokeStyle",
+        "roughness",
+        "strokeLineDash",
+        "role",
+        "layer",
+        "group",
+        "semanticKind",
+        "visualStyle",
+        "relationshipType",
+      ]) {
+        if (el[property] !== undefined) {
+          item[property] = el[property];
+        }
+      }
+
       // Arrows are positioned by their start/end bindings, not x/y —
       // including x/y for them is meaningless and was leaking NaN -> null
       // into the payload. Every other type still needs a real position.
@@ -272,8 +292,8 @@ function simplifySceneForPrompt(elements: readonly any[]) {
       if (el.type === "arrow") {
         const startId = el.startBinding?.elementId;
         const endId = el.endBinding?.elementId;
-        if (startId) item.start = { id: startId };
-        if (endId) item.end = { id: endId };
+        if (startId) item.startBinding = { elementId: startId };
+        if (endId) item.endBinding = { elementId: endId };
       }
 
       const boundText = boundTextByContainer.get(el.id);

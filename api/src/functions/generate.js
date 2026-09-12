@@ -1220,6 +1220,29 @@ function getExcalidrawStyle(visualStyle) {
   };
 }
 
+function resolveVisualStyle(element) {
+  const requested = sanitizeVisualStyle(
+    element?.style?.visual
+  );
+
+  if (requested) {
+    return requested;
+  }
+
+  if (element?.kind === "note") return "annotation";
+  if (element?.kind === "group") return "group";
+  if (element?.kind === "relationship") return "default";
+  if (element?.type === "diamond" || element?.role === "decision") {
+    return "decision";
+  }
+  if (element?.type === "ellipse" || element?.role === "external") {
+    return "external";
+  }
+  if (element?.role === "secondary") return "secondary";
+
+  return "primary";
+}
+
 
 // ============================================================
 // SEMANTIC METADATA VALIDATION
@@ -2185,6 +2208,7 @@ function renderSingleIRNode(element) {
      * the frontend returns the native scene unchanged.
      */
     out.semanticKind = "group";
+    out.visualStyle = resolveVisualStyle(element);
 
     if (Array.isArray(element.children)) {
       out.children = [
@@ -2260,7 +2284,8 @@ function renderSingleIRNode(element) {
 
       ...noteStyle,
 
-      semanticKind: "note"
+      semanticKind: "note",
+      visualStyle: resolveVisualStyle(element)
     };
 
     return out;
@@ -2333,6 +2358,8 @@ function renderSingleIRNode(element) {
     if (group) {
       out.group = group;
     }
+
+    out.visualStyle = resolveVisualStyle(element);
 
     out.semanticKind = "node";
 
@@ -3429,10 +3456,7 @@ function sanitizeIRForAdd(raw) {
         raw.layer
       );
 
-    const visual =
-      sanitizeVisualStyle(
-        raw.style?.visual
-      );
+    const visual = resolveVisualStyle(raw);
 
     const group =
       cleanId(
@@ -3447,11 +3471,7 @@ function sanitizeIRForAdd(raw) {
       node.layer = layer;
     }
 
-    if (visual) {
-      node.style = {
-        visual
-      };
-    }
+    node.style = { visual };
 
     if (group) {
       node.group = group;
@@ -3528,11 +3548,7 @@ function sanitizeIRForAdd(raw) {
       note.layer = layer;
     }
 
-    if (visual) {
-      note.style = {
-        visual
-      };
-    }
+    note.style = { visual };
 
     return note;
   }
@@ -4477,18 +4493,30 @@ function filterOperationsAgainstScene(
   operations,
   existingElements
 ) {
-  const existingIds =
-    new Set(
-      Array.isArray(existingElements)
-        ? existingElements
-            .map((element) =>
-              typeof element?.id === "string"
-                ? element.id
-                : null
-            )
-            .filter(Boolean)
-        : []
-    );
+  const existingIds = new Set();
+  const endpointIds = new Set();
+
+  for (const element of Array.isArray(existingElements) ? existingElements : []) {
+    if (typeof element?.id !== "string") {
+      continue;
+    }
+
+    existingIds.add(element.id);
+
+    if (!isNativeArrow(element)) {
+      endpointIds.add(element.id);
+    }
+  }
+
+  for (const operation of Array.isArray(operations) ? operations : []) {
+    if (
+      operation?.op === "add" &&
+      operation.element?.kind !== "relationship" &&
+      typeof operation.element?.id === "string"
+    ) {
+      endpointIds.add(operation.element.id);
+    }
+  }
 
   const addedIds =
     new Set();
@@ -4523,7 +4551,20 @@ function filterOperationsAgainstScene(
         continue;
       }
 
+      if (
+        operation.element?.kind === "relationship" &&
+        (!endpointIds.has(operation.element.from) ||
+          !endpointIds.has(operation.element.to) ||
+          operation.element.from === operation.element.to)
+      ) {
+        continue;
+      }
+
       addedIds.add(id);
+
+      if (operation.element?.kind !== "relationship") {
+        endpointIds.add(id);
+      }
 
       result.push(
         operation
@@ -4545,6 +4586,21 @@ function filterOperationsAgainstScene(
       if (
         !existingIds.has(id) &&
         !addedIds.has(id)
+      ) {
+        continue;
+      }
+
+      if (
+        operation.changes &&
+        (operation.changes.from !== undefined ||
+          operation.changes.to !== undefined) &&
+        ((operation.changes.from !== undefined &&
+          !endpointIds.has(operation.changes.from)) ||
+          (operation.changes.to !== undefined &&
+            !endpointIds.has(operation.changes.to)) ||
+          (operation.changes.from !== undefined &&
+            operation.changes.to !== undefined &&
+            operation.changes.from === operation.changes.to))
       ) {
         continue;
       }
@@ -4580,6 +4636,125 @@ function filterOperationsAgainstScene(
   }
 
   return result;
+}
+
+function finalizeCreatedScene(elements) {
+  const nativeElements = Array.isArray(elements)
+    ? elements.map((element) => ({ ...element }))
+    : [];
+  const nativeMap = new Map(
+    nativeElements
+      .filter((element) => typeof element?.id === "string")
+      .map((element) => [element.id, element])
+  );
+  const irMap = new Map(
+    convertNativeElementsToIR(nativeElements)
+      .map((element) => [element.id, element])
+  );
+
+  for (const [id, native] of nativeMap) {
+    if (isNativeArrow(native)) {
+      const from = getArrowEndpointId(native, "start");
+      const to = getArrowEndpointId(native, "end");
+
+      if (
+        !from ||
+        !to ||
+        from === to ||
+        !nativeMap.has(from) ||
+        !nativeMap.has(to) ||
+        isNativeArrow(nativeMap.get(from)) ||
+        isNativeArrow(nativeMap.get(to))
+      ) {
+        nativeMap.delete(id);
+      }
+
+      continue;
+    }
+
+    const ir = irMap.get(id);
+
+    if (
+      !ir ||
+      (ir.kind !== "node" &&
+        ir.kind !== "note" &&
+        ir.kind !== "group")
+    ) {
+      continue;
+    }
+
+    const visual = resolveVisualStyle(ir);
+
+    Object.assign(native, getExcalidrawStyle(visual));
+    native.visualStyle = visual;
+
+    if (ir?.kind === "node") {
+      native.semanticKind = "node";
+    } else if (ir?.kind === "note") {
+      native.semanticKind = "note";
+    } else if (ir?.kind === "group") {
+      native.semanticKind = "group";
+    }
+  }
+
+  for (const native of nativeMap.values()) {
+    if (isNativeArrow(native)) {
+      rerouteNativeArrow(native, nativeMap);
+    }
+  }
+
+  return orderNativeElements(nativeMap, nativeElements);
+}
+
+async function repairCreationRelationships(elements, topic, requestId) {
+  const createdIR = convertNativeElementsToIR(elements);
+  const nodes = createdIR
+    .filter((element) => element.kind === "node")
+    .map((element) => ({ id: element.id, label: element.label }));
+  const relationships = createdIR.filter(
+    (element) => element.kind === "relationship"
+  );
+
+  const needsRepair =
+    nodes.length >= 2 &&
+    relationships.length === 0;
+
+  if (!needsRepair) {
+    return elements;
+  }
+
+  try {
+    const repairPrompt = [
+      ARROW_ONLY_INSTRUCTIONS,
+      "Requested topic:",
+      topic,
+      "Existing nodes:",
+      JSON.stringify(nodes),
+      "Only use the exact node IDs provided above."
+    ].join("\n\n");
+    const repairText = await callModel(repairPrompt, 2000);
+    let repairOperations = validateOperationIds(
+      extractOperations(repairText)
+    );
+
+    repairOperations = filterOperationsAgainstScene(
+      repairOperations,
+      elements
+    );
+
+    const repaired = applyOperationsToCanvas(elements, repairOperations);
+    console.info("Creation connection repair completed.", {
+      requestId,
+      repairOperationCount: repairOperations.length
+    });
+    return repaired;
+  } catch (repairError) {
+    console.error("Connection repair failed.", {
+      requestId,
+      message: repairError.message
+    });
+    return elements;
+  }
 }
 
 
@@ -4896,6 +5071,12 @@ app.http(
             operations
           );
 
+        operations =
+          filterOperationsAgainstScene(
+            operations,
+            []
+          );
+
         /*
          * Creation starts with an empty canvas.
          */
@@ -4905,140 +5086,14 @@ app.http(
             operations
           );
 
-        // ----------------------------------------------------
-        // CREATION-ONLY CONNECTION REPAIR
-        // ----------------------------------------------------
-
-        /*
-         * IMPORTANT:
-         *
-         * This repair pass NEVER runs during editing.
-         *
-         * Notes are intentionally excluded from nodeCount.
-         */
-        const createdIR =
-          convertNativeElementsToIR(
-            finalElements
-          );
-
-        const nodeCount =
-          createdIR.filter(
-            (element) =>
-              element.kind === "node"
-          ).length;
-
-        const relationshipCount =
-          createdIR.filter(
-            (element) =>
-              element.kind ===
-              "relationship"
-          ).length;
-
-        /*
-         * We only repair genuinely sparse creation results.
-         *
-         * There is deliberately NO N-1 requirement.
-         */
-        const needsConnectionRepair =
-          nodeCount >= 2 &&
-          relationshipCount <
-            Math.max(
-              1,
-              nodeCount - 2
-            );
-
-        if (
-          needsConnectionRepair
-        ) {
-          try {
-            const nodes =
-              createdIR
-                .filter(
-                  (element) =>
-                    element.kind ===
-                    "node"
-                )
-                .map(
-                  (element) => ({
-                    id:
-                      element.id,
-
-                    label:
-                      element.label
-                  })
-                );
-
-            const repairPrompt = [
-              ARROW_ONLY_INSTRUCTIONS,
-
-              "Existing nodes:",
-
-              JSON.stringify(
-                nodes
-              )
-            ].join(
-              "\n\n"
-            );
-
-            const repairText =
-              await callModel(
-                repairPrompt,
-                2000
-              );
-
-            let repairOperations =
-              extractOperations(
-                repairText
-              );
-
-            repairOperations =
-              validateOperationIds(
-                repairOperations
-              );
-
-            repairOperations =
-              filterOperationsAgainstScene(
-                repairOperations,
-                finalElements
-              );
-
-            /*
-             * Apply only the repair operations.
-             * Existing nodes remain unchanged.
-             */
-            finalElements =
-              applyOperationsToCanvas(
-                finalElements,
-                repairOperations
-              );
-
-            console.info(
-              "Creation connection repair completed.",
-              {
-                requestId,
-                repairOperationCount:
-                  repairOperations.length
-              }
-            );
-          } catch (
-            repairError
-          ) {
-            /*
-             * Repair is optional.
-             *
-             * A failure here must not destroy an otherwise valid
-             * generated diagram.
-             */
-            console.error(
-              "Connection repair failed.",
-              {
-                requestId,
-                message:
-                  repairError.message
-              }
-            );
-          }
-        }
+        // Creation alone gets deterministic normalization and repair.
+        finalElements = finalizeCreatedScene(finalElements);
+        finalElements = await repairCreationRelationships(
+          finalElements,
+          topic,
+          requestId
+        );
+        finalElements = finalizeCreatedScene(finalElements);
 
         console.info(
           "Creation completed.",
