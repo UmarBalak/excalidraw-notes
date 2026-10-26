@@ -41,22 +41,20 @@ STEP 1 — UNDERSTAND THE TOPIC
 Before producing JSON, determine:
 
 1. What is the primary subject?
-2. What are the 3-10 most important entities/concepts/steps/states?
+2. What are the 3–12 most important entities / concepts / steps / states?
 3. What meaningful relationships actually exist?
 4. What diagram grammar best communicates them?
 5. Which elements are primary versus secondary?
 
 Prefer:
-- the amount of detail needed to explain the user's requested learning objective
+- the amount of detail needed to explain the user's learning objective
 - meaningful relationships over decorative connections
 - specific terminology over generic labels
 - whitespace over unnecessary density
 - structured layout zones over scattered elements
 - sufficient detail for complex subjects without expanding simple subjects unnecessarily
 
-Do NOT enforce a universal node-count target. A small concept may need only a few elements;
-a neural network, state machine, dependency graph, or detailed architecture may need many.
-Prefer quality, clarity, and semantic completeness over both oversimplification and unnecessary expansion.
+Do NOT enforce a universal node-count target. A small concept may need only a few elements; a neural network, state machine, dependency graph, or detailed architecture may need many. Prefer quality, clarity, and semantic completeness over both oversimplification and unnecessary expansion.
 
 ==================================================
 STEP 1A — INFER THE USER'S LEARNING INTENT
@@ -66,19 +64,12 @@ Treat the user's request as the source of truth for the canvas.
 Before generating elements, infer:
 
 1. SUBJECT: the exact concept, system, algorithm, process, or problem.
-2. LEARNING OBJECTIVE: what the user should be able to explain, derive, compare,
-   implement, or reason about after studying the canvas.
-3. AUDIENCE AND DEPTH: follow the requested audience and depth. For research-level
-   requests, include relevant mechanisms, mathematics, assumptions, limitations,
-   trade-offs, diagnostics, and experimental considerations.
-4. DELIVERABLES: identify explicit requests for diagrams, equations, worked examples,
-   step-by-step operation, tips, comparisons, or reference notes.
-5. CONTEXT: preserve terminology, constraints, named components, and assumptions
-   supplied by the user.
+2. LEARNING OBJECTIVE: what the user should be able to explain, derive, compare, implement, or reason about after studying the canvas.
+3. AUDIENCE AND DEPTH: follow the requested audience and depth. For research-level requests, include relevant mechanisms, mathematics, assumptions, limitations, trade-offs, diagnostics, and experimental considerations.
+4. DELIVERABLES: identify explicit requests for diagrams, equations, worked examples, step-by-step operation, tips, comparisons, or reference notes.
+5. CONTEXT: preserve terminology, constraints, named components, and assumptions supplied by the user.
 
-Satisfy every explicit deliverable when relevant. Do not ask for details that can
-reasonably be inferred. If an assumption is necessary, keep it conservative and do
-not present it as a known fact.
+Satisfy every explicit deliverable when relevant. Do not ask for details that can reasonably be inferred. If an assumption is necessary, keep it conservative and do not present it as a known fact.
 
 ==================================================
 STEP 1B — SELECT A TOPIC-APPROPRIATE VISUAL GRAMMAR
@@ -86,29 +77,25 @@ STEP 1B — SELECT A TOPIC-APPROPRIATE VISUAL GRAMMAR
 
 Choose the primary visual grammar based on the subject's semantics, not keywords alone.
 Use a hybrid composition when one grammar cannot explain the topic adequately.
-Available grammars include, but are not limited to:
+
+Available grammars include (not exhaustive):
 
 - Sequence / pipeline: ordered processing, data transformations, compilation, inference.
-- Layered graph: neural networks, dependencies, interconnected components, knowledge graphs.
+- Layered graph / network: neural networks, dependencies, interconnected components, knowledge graphs.
 - Internal architecture: model internals, operating systems, databases, system components.
 - Feedback loop: training, optimization, control systems, iterative algorithms.
 - State machine: protocols, parsers, lifecycle transitions, stateful behavior.
-- Mathematical illustration: geometry, loss surfaces, gradients, probability, optimization.
+- Mathematical / geometric: geometry, loss surfaces, gradients, probability, optimization.
 - Hierarchy / tree: taxonomies, syntax trees, decomposition, classification hierarchies.
 - Comparison: competing methods, algorithms, designs, or trade-offs.
 - Timeline / interaction: concurrency, distributed systems, events, request lifecycles.
-- Spatial / physical layout: geometry, hardware layouts, physical or spatial relationships.
-- Hybrid: a main architecture plus a supporting sequence, graph, equation, or comparison.
+- Spatial / physical layout: geometry, hardware layouts, physical relationships.
+- Dual / parallel subsystems: encoder-decoder, client-server, producer-consumer, dual-path designs.
+- Hybrid: main architecture plus a supporting sequence, graph, equation, or comparison.
 
-Do not force every topic into a left-to-right flowchart, a collection of rectangles,
-or a single fixed template. The examples above are not exhaustive; select another
-representation when it better fits the request.
+Do not force every topic into a left-to-right flowchart or a single fixed template.
 
-For graph-like topics, represent important entities individually when that level of
-structure is essential. For example, a neuron-level neural network may require separate
-neuron nodes and weighted edges; a dependency graph requires explicit dependencies;
-a simple conceptual overview may need only grouped components. Choose detail according
-to the user's request and the diagram's readability.
+For graph-like topics, represent important entities individually when that level of structure is essential. Choose detail according to the user's request and the diagram's readability.
 
 ==================================================
 STEP 1C — EXPLAIN MECHANISMS, NOT JUST COMPONENT NAMES
@@ -126,8 +113,7 @@ When applicable to the topic, show:
 These are conditional requirements, not a checklist to force onto every subject.
 For mathematical and algorithmic topics, include relevant equations and define symbols.
 For architectures, show meaningful component boundaries and connections.
-For learning systems, distinguish forward computation, objective/loss evaluation,
-gradient computation, and parameter updates when relevant.
+For learning systems, distinguish forward computation, objective/loss evaluation, gradient computation, and parameter updates when relevant.
 For comparisons, align equivalent concepts and make differences explicit.
 Do not add components or relationships solely to make the canvas look comprehensive.
 
@@ -136,15 +122,9 @@ STEP 1D — MAKE THE CANVAS SELF-TEACHING
 ==================================================
 
 The canvas should explain the subject without requiring the user to fill in major gaps.
-Use a specific title and informative subtitle, clear labels, a visible reading direction,
-and annotations near the elements they explain. Add a legend when colors, symbols,
-line styles, or arrow types carry meaning.
+Use a specific title and informative subtitle, clear labels, a visible reading direction, and annotations near the elements they explain. Add a legend when colors, symbols, line styles, or arrow types carry meaning.
 
-When the user requests detailed working, tips, or research-level depth, include
-supporting notes selected for the subject. Potential themes include mechanisms,
-mathematical foundations, implementation details, assumptions, common pitfalls,
-diagnostics, limitations, trade-offs, and experimental practice. Select only the
-relevant themes; do not force every topic into the same number or categories of notes.
+When the user requests detailed working, tips, or research-level depth, include supporting notes selected for the subject. Potential themes include mechanisms, mathematical foundations, implementation details, assumptions, common pitfalls, diagnostics, limitations, trade-offs, and experimental practice. Select only the relevant themes.
 
 Keep long explanations in notes or text elements rather than overcrowding node labels.
 Keep the primary diagram visually dominant when the diagram is the main deliverable.
@@ -157,19 +137,12 @@ Adapt the level of detail to the user's wording:
 
 - Overview: central idea and essential relationships.
 - Detailed: internal components, intermediate steps, and relevant equations.
-- Research-level: mechanisms, mathematical assumptions, limitations, trade-offs,
-  diagnostics, and experimental considerations where appropriate.
-- Comprehensive canvas: substantial main diagram plus organized explanatory notes
-  when the user explicitly asks for both.
+- Research-level: mechanisms, mathematical assumptions, limitations, trade-offs, diagnostics, and experimental considerations where appropriate.
+- Comprehensive canvas: substantial main diagram plus organized explanatory notes when the user explicitly asks for both.
 
-Use the canvas area in proportion to the information density. Avoid shrinking the main
-diagram to accommodate excessive notes. If a graph becomes dense, reduce redundant
-labels, group repetitive structures, or show a representative pattern with a clear
-legend; preserve individual nodes and edges when they are essential to the request.
+Use the canvas area in proportion to the information density. Avoid shrinking the main diagram to accommodate excessive notes. If a graph becomes dense, reduce redundant labels, group repetitive structures, or show a representative pattern with a clear legend; preserve individual nodes and edges when they are essential to the request.
 
-Do not fabricate measurements, learned parameters, benchmark results, predictions,
-or experimental outcomes. Numerical values may be used as illustrative examples only
-when they are clearly identified as illustrative.
+Do not fabricate measurements, learned parameters, benchmark results, predictions, or experimental outcomes. Numerical values may be used as illustrative examples only when clearly identified as illustrative.
 
 ==================================================
 STEP 1F — CHECK SEMANTIC COMPLETENESS BEFORE OUTPUT
@@ -188,8 +161,7 @@ Before returning the canvas, verify:
 9. Examples and assumptions are not presented as measured facts.
 10. The result obeys the Canvas IR v2 contract.
 
-Do not confuse visual completeness with semantic completeness. A canvas is complete when
-it explains the important mechanisms and relationships required by the user's objective.
+Do not confuse visual completeness with semantic completeness. A canvas is complete when it explains the important mechanisms and relationships required by the user's objective.
 
 ==================================================
 STEP 2 — ACCURACY / GROUNDING
@@ -204,9 +176,7 @@ Rules:
 - If the topic is conceptual, remain conceptual.
 - Do not turn a conceptual explanation into a concrete implementation without evidence.
 - If a relationship is uncertain, omit it instead of inventing it.
-- Do not automatically add common architecture components such as:
-  API Gateway, Redis, Kafka, Load Balancer, Authentication Service, Database, Queue, Cache, etc.
-  unless they are genuinely relevant to the request.
+- Do not automatically add common architecture components (API Gateway, Redis, Kafka, Load Balancer, Authentication Service, Database, Queue, Cache, etc.) unless they are genuinely relevant to the request.
 - Do not present assumptions as facts.
 
 The diagram should explain the user's topic, not a generic system that happens to resemble it.
@@ -215,50 +185,19 @@ The diagram should explain the user's topic, not a generic system that happens t
 STEP 3 — CHOOSE THE DIAGRAM GRAMMAR
 ==================================================
 
-Choose ONE primary structure, then add a secondary structure only when it materially
-improves the explanation. A hybrid is appropriate for complex topics that need both an
-overview and a detailed internal mechanism.
+Choose ONE primary structure, then add a secondary structure only when it materially improves the explanation.
 
-A. SEQUENCE
-Use when something happens in an ordered progression.
-
-B. FAN-OUT
-Use when one meaningful entity leads to several branches.
-
-C. CONVERGENCE
-Use when several meaningful entities lead toward one outcome.
-
-D. DECISION
-Use only when an actual condition or decision exists.
-
-E. COMPARISON
-Use when two concepts, approaches, systems, or architectures should be contrasted.
-
-F. CYCLE
-Use when the process genuinely returns to an earlier state.
-
-G. HUB
-Use when one central concept has several meaningful relationships and no strong sequential direction exists.
-
-H. DUAL-COLUMN / PARALLEL SUBSYSTEMS
-Use when two major subsystems interact across parallel workflows, such as encoder-decoder
-architectures, client-server systems, or producer-consumer designs. Use aligned columns,
-meaningful cross-connections, and distinct subcomponents where the internal structure matters.
-
-I. LAYERED GRAPH / NETWORK
-Use when entities have many-to-many or layer-to-layer relationships, such as neural
-networks or dependency graphs. Represent individual nodes and edges when required by the
-requested level of detail. Do not reduce a graph to a linear pipeline when connectivity
-is central to understanding it.
-
-J. MATHEMATICAL / GEOMETRIC REPRESENTATION
-Use when spatial, geometric, numeric, or optimization relationships are the clearest way
-to explain the subject. Add axes, curves, vectors, equations, or annotated regions only
-when supported by the requested concept and the available Canvas IR primitives.
-
-K. HYBRID COMPOSITION
-Combine a primary architecture with a smaller sequence, graph, mathematical illustration,
-or comparison when the user asks to understand both the overall structure and its working.
+A. SEQUENCE — ordered progression.
+B. FAN-OUT — one entity leads to several branches.
+C. CONVERGENCE — several entities lead toward one outcome.
+D. DECISION — only when an actual condition or decision exists.
+E. COMPARISON — two concepts, approaches, or systems should be contrasted.
+F. CYCLE — the process genuinely returns to an earlier state.
+G. HUB — one central concept has several meaningful relationships with no strong sequential direction.
+H. DUAL / PARALLEL SUBSYSTEMS — two major subsystems interact across parallel workflows (encoder-decoder, client-server, producer-consumer, dual-path residual, etc.). Use aligned columns, meaningful cross-connections, and distinct subcomponents where internal structure matters.
+I. LAYERED GRAPH / NETWORK — many-to-many or layer-to-layer relationships. Represent individual nodes and edges when required by the requested level of detail.
+J. MATHEMATICAL / GEOMETRIC — spatial, geometric, numeric, or optimization relationships are the clearest explanation.
+K. HYBRID — combine a primary architecture with a smaller sequence, graph, mathematical illustration, or comparison when needed.
 
 Do not force every topic into a left-to-right flowchart.
 
@@ -266,54 +205,34 @@ Do not force every topic into a left-to-right flowchart.
 STEP 4 — SEMANTIC GRAPH
 ==================================================
 
-Think about the diagram as:
-
-NODES:
-meaningful concepts, components, actions, states, or external systems.
+NODES: meaningful concepts, components, actions, states, or external systems.
 
 ID CONVENTION:
 Every node must have a stable id derived from a slugified, lower-case version of its label.
 Examples:
-  "User Query"      -> id: "user-query"
-  "Vector Database"  -> id: "vector-database"
-  "LLM Response"     -> id: "llm-response"
-This makes ids predictable and prevents duplicate or random ids.
+  "User Query"      → id: "user-query"
+  "Vector Database" → id: "vector-database"
+  "LLM Response"    → id: "llm-response"
 
-RELATIONSHIPS:
-real semantic connections between nodes.
+RELATIONSHIPS: real semantic connections between nodes.
 
 Every relationship must communicate something meaningful, such as:
-
-- produces
-- consumes
-- sends_to
-- receives_from
-- calls
-- depends_on
-- reads_from
-- writes_to
-- transforms
-- triggers
-- validates
-- contains
-- compares_with
-- leads_to
+produces, consumes, sends_to, receives_from, calls, depends_on, reads_from, writes_to, transforms, triggers, validates, contains, compares_with, leads_to, residual, skip.
 
 Do NOT add relationships merely to make the diagram appear connected.
-
 There is NO N-1 relationship requirement.
-
 A diagram with fewer correct relationships is always better than one with false connections.
 
 RELATIONSHIP LABELS & CLEARANCE:
-- Relationship labels MUST be ultra-concise: 1-2 words (max 10-12 characters, e.g., "Q, K, V", "tokens", "logits", "loss").
-- DO NOT put redundant labels on direct consecutive steps: If node A flows directly to node B in a vertical stack, leave the arrow UNLABELED. Only label arrows when it adds essential semantic meaning (e.g. "Q", "K, V", "tokens", "residual", "logits")!
+- Labels MUST be ultra-concise: 1–2 words (max 10–12 characters). Examples: "Q, K, V", "tokens", "logits", "loss", "residual".
+- DO NOT put redundant labels on direct consecutive steps. If node A flows directly to node B in a vertical stack, leave the arrow UNLABELED. Only label arrows when the label adds essential semantic meaning.
 - NEVER place long sentences, bullet points, or paragraphs on a relationship label.
-- Leave at least 140px horizontal clearance or 100px vertical clearance between connected nodes when a relationship has a label.
+- Leave at least 140 px horizontal clearance or 100 px vertical clearance between connected nodes when a relationship has a label.
 
 RESIDUAL / SKIP CONNECTIONS:
-- For architectures with residual or skip connections (e.g., ResNet, Transformer Pre-LN/Post-LN):
-  Add a relationship that branches from the input node, bypasses the sub-layer (e.g., Attention or FFN), and connects directly into the subsequent Add & Norm or combination node.
+For architectures that contain residual or skip connections (ResNet blocks, Transformer Pre-LN / Post-LN, U-Net skip paths, residual connections in general):
+- Add a relationship that branches from the input of the sub-layer, bypasses the intermediate computation, and connects directly into the subsequent combination / Add & Norm node.
+- Prefer routing that clearly shows the bypass (the application will handle geometry).
 
 ==================================================
 STEP 5 — LABELS
@@ -321,33 +240,11 @@ STEP 5 — LABELS
 
 Use concrete terminology from the topic.
 
-Avoid generic labels such as:
+Avoid generic labels such as "Input", "Output", "Process", "Component A", "Component B", "Step 1", "Step 2", "System" unless those are literally the terminology of the requested topic.
 
-"Input"
-"Output"
-"Process"
-"Component A"
-"Component B"
-"Step 1"
-"Step 2"
-"System"
+Prefer short labels, usually 2–5 words.
 
-unless those are literally the terminology of the requested topic.
-
-Prefer short labels, usually 2-5 words.
-
-Examples:
-
-"User Query"
-"Embedding Model"
-"Vector Database"
-"Similarity Search"
-"Retrieved Context"
-"LLM Response"
-
-Do not put long explanations inside node labels.
-
-Use a note or text element when explanation is required.
+Do not put long explanations inside node labels. Use a note or text element when explanation is required.
 
 ==================================================
 STEP 6 — CANVAS IR SEMANTIC KINDS
@@ -355,26 +252,16 @@ STEP 6 — CANVAS IR SEMANTIC KINDS
 
 Use only these semantic kinds:
 
-- node
-  Components, processes, concepts, actors, external systems, decisions.
-
-- note
-  Explanatory note or grouped bullet points.
-
-- text
-  Title, subtitle, caption, annotation, or short explanation.
-
-- relationship
-  Directed connection between two elements.
-
-- group
-  Semantic container for related elements.
+- node          Components, processes, concepts, actors, external systems, decisions.
+- note          Explanatory note or grouped bullet points.
+- text          Title, subtitle, caption, annotation, or short explanation.
+- relationship  Directed connection between two elements.
+- group         Semantic container for related elements.
 
 Node types:
-
-- rectangle = component/process/concept
-- ellipse = external actor/system/start/end
-- diamond = actual decision/conditional
+- rectangle = component / process / concept
+- ellipse   = external actor / system / start / end
+- diamond   = actual decision / conditional
 
 Do not use shapes merely for decoration.
 
@@ -384,105 +271,65 @@ STEP 7 — OPTIONAL METADATA & LAYOUT
 
 Optional metadata may be used when it improves clarity.
 
-role:
-- hero
-- primary
-- secondary
-- supporting
-- external
-- decision
-
-layer:
-- presentation
-- application
-- processing
-- integration
-- data
-- external
-- annotation
-
-style.visual:
-- primary
-- secondary
-- annotation
-- decision
-- external
-- group
-- default
-
-IMPORTANT:
+role:     hero | primary | secondary | supporting | external | decision
+layer:    presentation | application | processing | integration | data | external | annotation
+style.visual: primary | secondary | annotation | decision | external | group | default
 
 role = semantic importance.
 style.visual = visual treatment.
 Do not assume that role automatically determines visual style.
 
 SIZE BY ROLE:
-- hero:                width 220-280, height 90-120
-- primary:             width 160-220, height 70-90
-- secondary:           width 140-180, height 60-80
-- supporting/external: width 120-160, height 55-75
-- decision (diamond):  width 140-180, height 100-140
-
-These ranges ensure visual hierarchy is immediately apparent.
+- hero:                width 220–280, height 90–120
+- primary:             width 160–220, height 70–90
+- secondary:           width 140–180, height 60–80
+- supporting/external: width 120–160, height 55–75
+- decision (diamond):  width 140–180, height 100–140
 
 LAYOUT COORDINATES & SPACING:
 
-The model provides useful initial coordinates.
-
 Use:
-x: 0-6000
-y: 0-3000
+x: 0–6000
+y: 0–3000
 
 Title:
-- approximately x=40
-- approximately y=25
-- fontSize around 28-36
+- approximately x = 40, y = 25
+- fontSize around 28–36
 
 Main diagram:
 - positioned below the title
 - aligned in logical rows and columns
 - consistent spacing
 
-Spacing target:
-- at least 80px horizontal spacing between node edges
-- at least 60px vertical spacing between rows
+Spacing targets:
+- at least 80 px horizontal spacing between node edges
+- at least 60 px vertical spacing between rows
+- inside a vertical pipeline of sub-layers, 40–60 px is preferred
 
-CANVAS REGIONS & PARTITIONING:
-
-When the user requests BOTH a main diagram AND detailed explanations / notes / tips,
-create clearly separated zones when this improves readability. A common layout is a large
-primary diagram on the left and explanatory notes on the right, but adapt the proportions
-to the selected visual grammar and the amount of content.
-
-DIAGRAM WORKSPACE:
-- Give the main visual enough area to show all essential structure and relationships.
-- For parallel subsystems, use aligned columns and readable cross-connections.
-- For graphs and neural networks, allow space for individual nodes and dense but necessary
-  edges; do not squeeze them into a narrow pipeline column.
-- For mathematical illustrations, reserve room for axes, curves, equations, and annotations.
-- Use semantic groups when they clarify boundaries, not as decoration.
-
-REFERENCE NOTES:
-- Keep notes in an organized grid or aligned regions; do not scatter them randomly.
-- Choose card count, width, height, and number of columns based on the requested depth
-  and available canvas space. Do not force exactly six cards or fixed coordinates.
-- Use concise, focused bullets and size each note to fit its content.
-- Avoid overlaps with the main diagram, labels, equations, and relationship paths.
-- If content exceeds the available space, expand the canvas layout or reduce redundant
-  wording rather than making text unreadably small.
-
-LAYOUT GRID FOR STANDARD FLOWCHARTS:
-- For simple horizontal SEQUENCE diagrams:
-  - Within a row, nodes start at x=100 and increment by (node_width + 120).
-- For HUB diagrams:
-  - Place central hub node at (500, 400). Connected nodes at 140px clearance.
-
-RELATIONSHIP-FRIENDLY POSITIONING:
+RELATIONSHIP-FRIENDLY POSITIONING (critical for clean arrows):
 - When node A connects to node B, position them so one edge of A directly faces one edge of B (horizontally or vertically aligned).
 - Avoid diagonal placements between connected nodes whenever possible.
-- Leave at least 140px horizontal clearance (or 90px vertical clearance) between connected nodes when a relationship has a label.
+- Leave at least 140 px horizontal clearance (or 90–100 px vertical clearance) between connected nodes when a relationship has a label.
 
-Advanced collision detection and routing are handled by application code, not by assuming model coordinates are perfect.
+DUAL / PARALLEL SUBSYSTEMS:
+When the diagram has two major parallel stacks (encoder-decoder, client-server, producer-consumer, dual-path residual, etc.):
+- Place the two stacks in aligned vertical columns with enough horizontal gap for clean cross-connections (≥ 140 px between the facing edges).
+- Keep corresponding stages roughly level so horizontal arrows are short and straight.
+- Wrap each stack in a semantic group with 30–40 px padding.
+
+CANVAS REGIONS WHEN NOTES ARE REQUESTED:
+When the user asks for both a main diagram and detailed explanations / notes / tips:
+- Keep the primary diagram on the left (or top) with enough room for all structure and relationships.
+- Place notes in a clean secondary zone (right or below), preferably in an organized grid or aligned columns.
+- Never scatter notes under individual nodes or let them overlap arrows, labels, or groups.
+- Size each note card to its content. Do not force a fixed number of cards or fixed coordinates.
+- If content exceeds available space, expand the layout or reduce redundant wording rather than making text unreadably small.
+
+LAYOUT GRID HELPERS:
+- Simple horizontal SEQUENCE: nodes start at x ≈ 100 and increment by (node_width + 120).
+- HUB diagrams: place central hub near (500, 400); connected nodes at ~140 px clearance.
+
+Advanced collision detection and routing are handled by application code. The model’s job is to supply sensible initial positions and clear semantic relationships.
 
 ==================================================
 STEP 8 — NOTES
@@ -490,59 +337,40 @@ STEP 8 — NOTES
 
 Notes are first-class semantic elements.
 
-Use notes when they help explain the user's requested subject, including:
+Use notes when they help explain the subject, including:
 - mechanisms and step-by-step working
 - equations, definitions, and assumptions
 - examples and intermediate results
 - practical tips, implementation considerations, and pitfalls
 - limitations, trade-offs, diagnostics, and research questions
 
-Select note themes based on the topic and requested depth. These categories are examples,
-not a mandatory checklist. Do not use generic note content such as "KEY NOTES",
-"Important concept", "Main dependency", or "Expected result".
+Select note themes based on the topic and requested depth. These categories are examples, not a mandatory checklist.
 
-Write topic-specific information. Prefer concise bullets that add insight beyond the
-main diagram. Use enough detail to satisfy the request without filling the canvas with
-repetitive prose.
+Write topic-specific information. Prefer concise bullets that add insight beyond the main diagram.
+Do not use generic content such as "KEY NOTES", "Important concept", "Main dependency", or "Expected result".
 
 ==================================================
 STEP 9 — ARCHITECTURE DIAGRAMS
 ==================================================
 
-For software/system architecture:
+For software / system architecture:
 
 Prioritize:
 1. major components
-2. important data/control flow
+2. important data / control flow
 3. external systems or actors
 4. meaningful dependencies
-5. storage/infrastructure only when relevant
+5. storage / infrastructure only when relevant
 
-Do not automatically create:
-- client
-- API gateway
-- service layer
-- database
-- cache
-- queue
+Do not automatically create client, API gateway, service layer, database, cache, or queue unless actually relevant.
 
-unless actually relevant.
-
-Use exact technologies when known.
-
-For example:
-"PostgreSQL" rather than "Database"
-"FastAPI" rather than "Backend"
-"Kafka" rather than "Message Queue"
-
-only when those technologies are actually known.
+Use exact technologies when known (e.g. "PostgreSQL", "FastAPI", "Kafka") rather than generic labels.
 
 ==================================================
 STEP 10 — COMPARISONS
 ==================================================
 
 For comparisons:
-
 - keep both sides visually parallel
 - use equivalent levels of detail
 - align corresponding concepts
@@ -565,15 +393,13 @@ Before returning JSON, verify:
 8. There are no unnecessary elements.
 9. There are no decorative relationships.
 10. Coordinates are reasonable.
-11. Connected elements are positioned sensibly.
+11. Connected elements are positioned so edges face each other (relationship-friendly).
 12. Notes contain topic-specific information and match the requested depth.
 13. The canvas includes all explicit deliverables requested by the user.
 14. Complexity is appropriate: neither a superficial summary nor unnecessary sprawl.
-15. The chosen visual grammar represents the subject's actual structure.
+15. Residual / skip connections are present when the architecture requires them.
 
-If removing an element would not reduce understanding, remove it. However, do not remove
-repeated nodes, edges, equations, or intermediate steps when those are essential to the
-requested technical explanation.
+If removing an element would not reduce understanding, remove it. However, do not remove repeated nodes, edges, equations, or intermediate steps when those are essential to the requested technical explanation.
 
 ==================================================
 CANVAS IR V2 JSON CONTRACT
@@ -586,14 +412,9 @@ Return ONLY:
   "operations": [...]
 }
 
-Supported operations:
-
-1. add
-2. update
-3. delete
+Supported operations: add, update, delete
 
 ADD NODE:
-
 {
   "op": "add",
   "element": {
@@ -603,66 +424,39 @@ ADD NODE:
     "label": "Concrete Concept",
     "role": "primary",
     "layer": "application",
-    "position": {
-      "x": 100,
-      "y": 150
-    },
-    "size": {
-      "width": 180,
-      "height": 80
-    },
-    "style": {
-      "visual": "primary"
-    }
+    "position": { "x": 100, "y": 150 },
+    "size": { "width": 180, "height": 80 },
+    "style": { "visual": "primary" }
   }
 }
 
 ADD NOTE:
-
 {
   "op": "add",
   "element": {
     "id": "note-id",
     "kind": "note",
     "title": "Key Points",
-    "items": [
-      "Specific point",
-      "Another specific point"
-    ],
-    "position": {
-      "x": 700,
-      "y": 150
-    },
-    "size": {
-      "width": 300,
-      "height": 180
-    },
-    "style": {
-      "visual": "annotation"
-    }
+    "items": ["Specific point", "Another specific point"],
+    "position": { "x": 700, "y": 150 },
+    "size": { "width": 300, "height": 180 },
+    "style": { "visual": "annotation" }
   }
 }
 
 ADD TEXT:
-
 {
   "op": "add",
   "element": {
     "id": "title",
     "kind": "text",
     "text": "Specific Diagram Title",
-    "position": {
-      "x": 40,
-      "y": 25
-    },
-    "style": {
-      "fontSize": 30
-    }
+    "position": { "x": 40, "y": 25 },
+    "style": { "fontSize": 30 }
   }
 }
 
 ADD RELATIONSHIP:
-
 {
   "op": "add",
   "element": {
@@ -677,60 +471,25 @@ ADD RELATIONSHIP:
 }
 
 ADD GROUP:
-
 {
   "op": "add",
   "element": {
     "id": "group-id",
     "kind": "group",
     "label": "Processing Layer",
-    "children": [
-      "child-a",
-      "child-b"
-    ],
-    "style": {
-      "visual": "group"
-    }
+    "children": ["child-a", "child-b"],
+    "style": { "visual": "group" }
   }
 }
 
-UPDATE:
-
-{
-  "op": "update",
-  "id": "existing-id",
-  "changes": {
-    "label": "New Label",
-    "position": {
-      "x": 500
-    }
-  }
-}
-
-DELETE:
-
-{
-  "op": "delete",
-  "id": "existing-id"
-}
+UPDATE / DELETE follow the same shapes as before.
 
 IMPORTANT:
-
-Do not return native Excalidraw geometry for relationships.
-
-Relationship endpoints are represented only by:
-- from
-- to
-
-The server computes the actual arrow geometry.
-
-Do not return unsupported operation names.
-
-Return no markdown.
-Return no explanation.
-Return no text outside the JSON object.
+- Do not return native Excalidraw geometry for relationships.
+- Relationship endpoints are represented only by from / to.
+- The server computes the actual arrow geometry.
+- Return no markdown, no explanation, no text outside the JSON object.
 `;
-
 
 // ============================================================
 // EDIT PROMPT
@@ -1341,11 +1100,8 @@ function cleanId(value) {
 // ============================================================
 
 /*
- * Returns the point on the boundary of `from` that faces `to`.
- *
- * The current backend intentionally uses simple direct routing.
- * More advanced collision-aware routing belongs in the renderer
- * layer later.
+ * Returns a point on the boundary of `from` that faces `to`.
+ * Arrow routing is handled by the obstacle-aware orthogonal router below.
  */
 function edgePoint(from, to, offsetIndex = 0, totalFromEdge = 1) {
   const fromCenterX = from.x + from.width / 2;
@@ -1379,62 +1135,270 @@ function edgePoint(from, to, offsetIndex = 0, totalFromEdge = 1) {
   };
 }
 
-function hasIntermediateBlock(startBlock, endBlock, nativeMap) {
-  const minY = Math.min(startBlock.y + startBlock.height, endBlock.y + endBlock.height);
-  const maxY = Math.max(startBlock.y, endBlock.y);
-  const minX = Math.min(startBlock.x, endBlock.x);
-  const maxX = Math.max(startBlock.x + startBlock.width, endBlock.x + endBlock.width);
+function getFacingEdge(fromBlock, toBlock) {
+  const dx = (toBlock.x + toBlock.width / 2) - (fromBlock.x + fromBlock.width / 2);
+  const dy = (toBlock.y + toBlock.height / 2) - (fromBlock.y + fromBlock.height / 2);
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "right" : "left";
+  return dy >= 0 ? "bottom" : "top";
+}
 
-  for (const block of nativeMap.values()) {
-    if (!isNativeBlock(block)) continue;
-    if (block.id === startBlock.id || block.id === endBlock.id) continue;
-    const centerY = block.y + block.height / 2;
-    if (centerY > minY + 10 && centerY < maxY - 10) {
-      if (block.x < maxX && block.x + block.width > minX) {
-        return true;
+function pointOutsideEdge(point, edge, distance = 18) {
+  switch (edge) {
+    case "right": return { x: point.x + distance, y: point.y };
+    case "left": return { x: point.x - distance, y: point.y };
+    case "bottom": return { x: point.x, y: point.y + distance };
+    default: return { x: point.x, y: point.y - distance };
+  }
+}
+
+function uniqueSortedNumbers(values) {
+  return [...new Set(values.map((v) => Math.round(v * 100) / 100))].sort((a, b) => a - b);
+}
+
+function pointInsideRect(point, rect) {
+  return point.x > rect.left + 0.01 && point.x < rect.right - 0.01 &&
+    point.y > rect.top + 0.01 && point.y < rect.bottom - 0.01;
+}
+
+function segmentHitsRect(a, b, rect) {
+  if (Math.abs(a.y - b.y) < 0.01) {
+    const y = a.y;
+    if (y <= rect.top + 0.01 || y >= rect.bottom - 0.01) return false;
+    return Math.max(Math.min(a.x, b.x), rect.left + 0.01) <
+      Math.min(Math.max(a.x, b.x), rect.right - 0.01);
+  }
+  if (Math.abs(a.x - b.x) < 0.01) {
+    const x = a.x;
+    if (x <= rect.left + 0.01 || x >= rect.right - 0.01) return false;
+    return Math.max(Math.min(a.y, b.y), rect.top + 0.01) <
+      Math.min(Math.max(a.y, b.y), rect.bottom - 0.01);
+  }
+  return true;
+}
+
+function simplifyOrthogonalPath(points) {
+  const unique = [];
+  for (const point of points) {
+    const previous = unique[unique.length - 1];
+    if (!previous || Math.abs(previous.x - point.x) > 0.01 || Math.abs(previous.y - point.y) > 0.01) {
+      unique.push(point);
+    }
+  }
+
+  const simplified = [];
+  for (const point of unique) {
+    while (simplified.length >= 2) {
+      const a = simplified[simplified.length - 2];
+      const b = simplified[simplified.length - 1];
+      const collinear = (Math.abs(a.x - b.x) < 0.01 && Math.abs(b.x - point.x) < 0.01) ||
+        (Math.abs(a.y - b.y) < 0.01 && Math.abs(b.y - point.y) < 0.01);
+      if (!collinear) break;
+      simplified.pop();
+    }
+    simplified.push(point);
+  }
+  return simplified;
+}
+
+/*
+ * Visibility-grid orthogonal router:
+ * - uses ports on the actual node boundaries
+ * - leaves each port in its outward direction
+ * - routes around padded node rectangles
+ * - penalizes bends so routes remain simple
+ * - returns a polyline suitable for Excalidraw's arrow `points`
+ */
+function findOrthogonalPath(startLead, endLead, obstacles) {
+  const clearance = 14;
+  const nearby = obstacles.filter((r) =>
+    r.right >= Math.min(startLead.x, endLead.x) - 220 &&
+    r.left <= Math.max(startLead.x, endLead.x) + 220 &&
+    r.bottom >= Math.min(startLead.y, endLead.y) - 220 &&
+    r.top <= Math.max(startLead.y, endLead.y) + 220
+  ).map((r) => ({
+    left: r.left - clearance,
+    right: r.right + clearance,
+    top: r.top - clearance,
+    bottom: r.bottom + clearance
+  }));
+
+  const margin = 80;
+  const minX = Math.min(startLead.x, endLead.x, ...nearby.map((r) => r.left)) - margin;
+  const maxX = Math.max(startLead.x, endLead.x, ...nearby.map((r) => r.right)) + margin;
+  const minY = Math.min(startLead.y, endLead.y, ...nearby.map((r) => r.top)) - margin;
+  const maxY = Math.max(startLead.y, endLead.y, ...nearby.map((r) => r.bottom)) + margin;
+
+  let xs = uniqueSortedNumbers([
+    startLead.x, endLead.x, minX, maxX,
+    ...nearby.flatMap((r) => [r.left, r.right])
+  ]);
+  let ys = uniqueSortedNumbers([
+    startLead.y, endLead.y, minY, maxY,
+    ...nearby.flatMap((r) => [r.top, r.bottom])
+  ]);
+
+  // Avoid pathological grids on very large canvases. Keep the coordinates
+  // closest to either endpoint and retain the outer escape lanes.
+  const capCoordinates = (coords, a, b) => {
+    if (coords.length <= 140) return coords;
+    const mandatory = new Set([a, b, coords[0], coords[coords.length - 1]]);
+    const remaining = coords.filter((v) => !mandatory.has(v))
+      .sort((u, v) => Math.min(Math.abs(u - a), Math.abs(u - b)) -
+        Math.min(Math.abs(v - a), Math.abs(v - b)))
+      .slice(0, 136);
+    return uniqueSortedNumbers([...mandatory, ...remaining]);
+  };
+  xs = capCoordinates(xs, startLead.x, endLead.x);
+  ys = capCoordinates(ys, startLead.y, endLead.y);
+
+  const blocked = (x, y) => nearby.some((r) => pointInsideRect({ x, y }, r));
+  const clearSegment = (a, b) => nearby.every((r) => !segmentHitsRect(a, b, r));
+
+  const startX = xs.indexOf(Math.round(startLead.x * 100) / 100);
+  const startY = ys.indexOf(Math.round(startLead.y * 100) / 100);
+  const endX = xs.indexOf(Math.round(endLead.x * 100) / 100);
+  const endY = ys.indexOf(Math.round(endLead.y * 100) / 100);
+  if ([startX, startY, endX, endY].some((v) => v < 0)) return null;
+
+  const width = xs.length;
+  const height = ys.length;
+  const key = (ix, iy, dir) => `${ix},${iy},${dir}`;
+  const parseKey = (value) => value.split(",").map(Number);
+  const startKey = key(startX, startY, "N");
+  const distances = new Map([[startKey, 0]]);
+  const previous = new Map();
+  const open = [{ key: startKey, cost: 0 }];
+  const directions = [
+    { dx: -1, dy: 0, dir: "H" },
+    { dx: 1, dy: 0, dir: "H" },
+    { dx: 0, dy: -1, dir: "V" },
+    { dx: 0, dy: 1, dir: "V" }
+  ];
+
+  // Small binary min-heap.
+  const push = (item) => {
+    open.push(item);
+    let i = open.length - 1;
+    while (i > 0) {
+      const parent = Math.floor((i - 1) / 2);
+      if (open[parent].cost <= item.cost) break;
+      open[i] = open[parent];
+      i = parent;
+    }
+    open[i] = item;
+  };
+  const pop = () => {
+    const root = open[0];
+    const last = open.pop();
+    if (open.length && last) {
+      let i = 0;
+      while (true) {
+        let child = i * 2 + 1;
+        if (child >= open.length) break;
+        if (child + 1 < open.length && open[child + 1].cost < open[child].cost) child++;
+        if (open[child].cost >= last.cost) break;
+        open[i] = open[child];
+        i = child;
+      }
+      open[i] = last;
+    }
+    return root;
+  };
+
+  let finalKey = null;
+  let iterations = 0;
+  const maxIterations = Math.min(width * height * 4, 100000);
+  while (open.length && iterations++ < maxIterations) {
+    const current = pop();
+    if (current.cost !== distances.get(current.key)) continue;
+    const [ix, iy, dir] = parseKey(current.key);
+    if (ix === endX && iy === endY) {
+      finalKey = current.key;
+      break;
+    }
+
+    const a = { x: xs[ix], y: ys[iy] };
+    for (const move of directions) {
+      const nx = ix + move.dx;
+      const ny = iy + move.dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const b = { x: xs[nx], y: ys[ny] };
+      if (blocked(b.x, b.y) || !clearSegment(a, b)) continue;
+
+      const length = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+      const bendPenalty = dir !== "N" && dir !== move.dir ? 28 : 0;
+      const nextKey = key(nx, ny, move.dir);
+      const nextCost = current.cost + length + bendPenalty;
+      if (nextCost < (distances.get(nextKey) ?? Infinity)) {
+        distances.set(nextKey, nextCost);
+        previous.set(nextKey, current.key);
+        push({ key: nextKey, cost: nextCost });
       }
     }
   }
-  return false;
+
+  if (!finalKey) return null;
+  const path = [];
+  let cursor = finalKey;
+  while (cursor) {
+    const [ix, iy] = parseKey(cursor);
+    path.push({ x: xs[ix], y: ys[iy] });
+    if (cursor === startKey) break;
+    cursor = previous.get(cursor);
+  }
+  path.reverse();
+  return simplifyOrthogonalPath(path);
 }
 
-function buildBypassArrowGeometry(startBlock, endBlock, isLeftColumn = false) {
-  // Route cleanly around the outside of intermediate blocks (bypass / residual connection)
-  const sideOffset = isLeftColumn ? -35 : 35;
-
-  const startX = isLeftColumn ? startBlock.x : startBlock.x + startBlock.width;
-  const startY = startBlock.y + startBlock.height / 2;
-  const endX = isLeftColumn ? endBlock.x : endBlock.x + endBlock.width;
-  const endY = endBlock.y + endBlock.height / 2;
-
-  const dy = endY - startY;
-
-  return {
-    x: startX,
-    y: startY,
-    points: [
-      [0, 0],
-      [sideOffset, 0],
-      [sideOffset, dy],
-      [endX - startX, dy]
-    ]
-  };
-}
-
-function buildArrowGeometry(startBlock, endBlock, startIndex = 0, startTotal = 1, endIndex = 0, endTotal = 1) {
+function buildArrowGeometry(
+  startBlock,
+  endBlock,
+  startIndex = 0,
+  startTotal = 1,
+  endIndex = 0,
+  endTotal = 1,
+  nativeMap = null
+) {
   const startPoint = edgePoint(startBlock, endBlock, startIndex, startTotal);
   const endPoint = edgePoint(endBlock, startBlock, endIndex, endTotal);
+  const startEdge = getFacingEdge(startBlock, endBlock);
+  const endEdge = getFacingEdge(endBlock, startBlock);
+  const startLead = pointOutsideEdge(startPoint, startEdge);
+  const endLead = pointOutsideEdge(endPoint, endEdge);
+
+  const obstacles = [];
+  if (nativeMap) {
+    for (const block of nativeMap.values()) {
+      if (!isNativeBlock(block) || block.id === startBlock.id || block.id === endBlock.id) continue;
+      if (![block.x, block.y, block.width, block.height].every(Number.isFinite)) continue;
+      obstacles.push({
+        left: block.x,
+        top: block.y,
+        right: block.x + block.width,
+        bottom: block.y + block.height
+      });
+    }
+  }
+
+  const middlePath = findOrthogonalPath(startLead, endLead, obstacles);
+  let absolutePoints;
+  if (middlePath && middlePath.length) {
+    absolutePoints = simplifyOrthogonalPath([startPoint, startLead, ...middlePath, endLead, endPoint]);
+  } else {
+    // Last-resort fallback for overlapping or degenerate layouts.
+    absolutePoints = simplifyOrthogonalPath([
+      startPoint,
+      { x: endPoint.x, y: startPoint.y },
+      endPoint
+    ]);
+  }
 
   return {
-    x: startPoint.x,
-    y: startPoint.y,
-    points: [
-      [0, 0],
-      [
-        endPoint.x - startPoint.x,
-        endPoint.y - startPoint.y
-      ]
-    ]
+    x: absolutePoints[0].x,
+    y: absolutePoints[0].y,
+    points: absolutePoints.map((point, index) => index === 0
+      ? [0, 0]
+      : [point.x - absolutePoints[0].x, point.y - absolutePoints[0].y])
   };
 }
 
@@ -1442,38 +1406,21 @@ function rerouteAllArrows(nativeMap) {
   const startEdgeGroups = new Map();
   const endEdgeGroups = new Map();
 
-  function getFacingEdge(fromBlock, toBlock) {
-    const fromCX = fromBlock.x + fromBlock.width / 2;
-    const fromCY = fromBlock.y + fromBlock.height / 2;
-    const toCX = toBlock.x + toBlock.width / 2;
-    const toCY = toBlock.y + toBlock.height / 2;
-    const dx = toCX - fromCX;
-    const dy = toCY - fromCY;
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      return dx >= 0 ? "right" : "left";
-    }
-    return dy >= 0 ? "bottom" : "top";
-  }
-
   for (const [id, native] of nativeMap) {
     if (!isNativeArrow(native)) continue;
     const startId = getArrowEndpointId(native, "start");
     const endId = getArrowEndpointId(native, "end");
-    if (!startId || !endId) continue;
     const startBlock = nativeMap.get(startId);
     const endBlock = nativeMap.get(endId);
     if (!startBlock || !endBlock || !isNativeBlock(startBlock) || !isNativeBlock(endBlock)) continue;
 
     const startEdge = getFacingEdge(startBlock, endBlock);
     const endEdge = getFacingEdge(endBlock, startBlock);
-
     const startKey = `${startId}:${startEdge}`;
     const endKey = `${endId}:${endEdge}`;
-
     if (!startEdgeGroups.has(startKey)) startEdgeGroups.set(startKey, []);
-    startEdgeGroups.get(startKey).push(id);
-
     if (!endEdgeGroups.has(endKey)) endEdgeGroups.set(endKey, []);
+    startEdgeGroups.get(startKey).push(id);
     endEdgeGroups.get(endKey).push(id);
   }
 
@@ -1481,45 +1428,23 @@ function rerouteAllArrows(nativeMap) {
     if (!isNativeArrow(native)) continue;
     const startId = getArrowEndpointId(native, "start");
     const endId = getArrowEndpointId(native, "end");
-    if (!startId || !endId) continue;
     const startBlock = nativeMap.get(startId);
     const endBlock = nativeMap.get(endId);
     if (!startBlock || !endBlock || !isNativeBlock(startBlock) || !isNativeBlock(endBlock)) continue;
 
     const startEdge = getFacingEdge(startBlock, endBlock);
     const endEdge = getFacingEdge(endBlock, startBlock);
-
-    const startKey = `${startId}:${startEdge}`;
-    const endKey = `${endId}:${endEdge}`;
-
-    const startList = startEdgeGroups.get(startKey) || [id];
-    const endList = endEdgeGroups.get(endKey) || [id];
-
-    const startIndex = startList.indexOf(id);
-    const endIndex = endList.indexOf(id);
-
-    const isResidualOrSkip =
-      native.relationshipType === "residual" ||
-      native.relationshipType === "skip" ||
-      (typeof native.label?.text === "string" && /residual|skip|bypass/i.test(native.label.text));
-
-    const needsBypass = isResidualOrSkip || hasIntermediateBlock(startBlock, endBlock, nativeMap);
-
-    let geometry;
-    if (needsBypass) {
-      // Route around the side to avoid passing through intermediate boxes
-      const isLeftColumn = (startBlock.x + startBlock.width / 2) < 450;
-      geometry = buildBypassArrowGeometry(startBlock, endBlock, isLeftColumn);
-    } else {
-      geometry = buildArrowGeometry(
-        startBlock,
-        endBlock,
-        Math.max(0, startIndex),
-        startList.length,
-        Math.max(0, endIndex),
-        endList.length
-      );
-    }
+    const startList = startEdgeGroups.get(`${startId}:${startEdge}`) || [id];
+    const endList = endEdgeGroups.get(`${endId}:${endEdge}`) || [id];
+    const geometry = buildArrowGeometry(
+      startBlock,
+      endBlock,
+      Math.max(0, startList.indexOf(id)),
+      startList.length,
+      Math.max(0, endList.indexOf(id)),
+      endList.length,
+      nativeMap
+    );
 
     native.x = geometry.x;
     native.y = geometry.y;
@@ -1528,7 +1453,7 @@ function rerouteAllArrows(nativeMap) {
     native.strokeWidth = 2;
     native.roughness = 0;
     if (!native.strokeColor || native.strokeColor === "#1e1e1e") {
-      native.strokeColor = isResidualOrSkip ? "#e03131" : "#495057"; // Coral red for residual highlights!
+      native.strokeColor = "#495057";
     }
   }
 }
@@ -2096,7 +2021,12 @@ function rerouteNativeArrow(
 
   const geometry = buildArrowGeometry(
     startBlock,
-    endBlock
+    endBlock,
+    0,
+    1,
+    0,
+    1,
+    nativeMap
   );
 
   arrow.x = geometry.x;
