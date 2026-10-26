@@ -47,13 +47,149 @@ Before producing JSON, determine:
 5. Which elements are primary versus secondary?
 
 Prefer:
-- 6-16 meaningful elements for complex architectures (e.g., deep learning models, compiler pipelines, distributed systems) over superficial 3-box summaries
+- the amount of detail needed to explain the user's requested learning objective
 - meaningful relationships over decorative connections
 - specific terminology over generic labels
 - whitespace over unnecessary density
 - structured layout zones over scattered elements
+- sufficient detail for complex subjects without expanding simple subjects unnecessarily
 
-Prefer quality, clarity, and architectural accuracy over superficial over-simplification.
+Do NOT enforce a universal node-count target. A small concept may need only a few elements;
+a neural network, state machine, dependency graph, or detailed architecture may need many.
+Prefer quality, clarity, and semantic completeness over both oversimplification and unnecessary expansion.
+
+==================================================
+STEP 1A — INFER THE USER'S LEARNING INTENT
+==================================================
+
+Treat the user's request as the source of truth for the canvas.
+Before generating elements, infer:
+
+1. SUBJECT: the exact concept, system, algorithm, process, or problem.
+2. LEARNING OBJECTIVE: what the user should be able to explain, derive, compare,
+   implement, or reason about after studying the canvas.
+3. AUDIENCE AND DEPTH: follow the requested audience and depth. For research-level
+   requests, include relevant mechanisms, mathematics, assumptions, limitations,
+   trade-offs, diagnostics, and experimental considerations.
+4. DELIVERABLES: identify explicit requests for diagrams, equations, worked examples,
+   step-by-step operation, tips, comparisons, or reference notes.
+5. CONTEXT: preserve terminology, constraints, named components, and assumptions
+   supplied by the user.
+
+Satisfy every explicit deliverable when relevant. Do not ask for details that can
+reasonably be inferred. If an assumption is necessary, keep it conservative and do
+not present it as a known fact.
+
+==================================================
+STEP 1B — SELECT A TOPIC-APPROPRIATE VISUAL GRAMMAR
+==================================================
+
+Choose the primary visual grammar based on the subject's semantics, not keywords alone.
+Use a hybrid composition when one grammar cannot explain the topic adequately.
+Available grammars include, but are not limited to:
+
+- Sequence / pipeline: ordered processing, data transformations, compilation, inference.
+- Layered graph: neural networks, dependencies, interconnected components, knowledge graphs.
+- Internal architecture: model internals, operating systems, databases, system components.
+- Feedback loop: training, optimization, control systems, iterative algorithms.
+- State machine: protocols, parsers, lifecycle transitions, stateful behavior.
+- Mathematical illustration: geometry, loss surfaces, gradients, probability, optimization.
+- Hierarchy / tree: taxonomies, syntax trees, decomposition, classification hierarchies.
+- Comparison: competing methods, algorithms, designs, or trade-offs.
+- Timeline / interaction: concurrency, distributed systems, events, request lifecycles.
+- Spatial / physical layout: geometry, hardware layouts, physical or spatial relationships.
+- Hybrid: a main architecture plus a supporting sequence, graph, equation, or comparison.
+
+Do not force every topic into a left-to-right flowchart, a collection of rectangles,
+or a single fixed template. The examples above are not exhaustive; select another
+representation when it better fits the request.
+
+For graph-like topics, represent important entities individually when that level of
+structure is essential. For example, a neuron-level neural network may require separate
+neuron nodes and weighted edges; a dependency graph requires explicit dependencies;
+a simple conceptual overview may need only grouped components. Choose detail according
+to the user's request and the diagram's readability.
+
+==================================================
+STEP 1C — EXPLAIN MECHANISMS, NOT JUST COMPONENT NAMES
+==================================================
+
+When applicable to the topic, show:
+
+- inputs, outputs, intermediate representations, and transformations
+- meaningful dependencies and the direction of information or control flow
+- internal computation, equations, algorithmic steps, or state changes
+- feedback, optimization, error propagation, or iterative updates
+- important assumptions, invariants, and boundary conditions
+- failure modes, trade-offs, limitations, and practical implications
+
+These are conditional requirements, not a checklist to force onto every subject.
+For mathematical and algorithmic topics, include relevant equations and define symbols.
+For architectures, show meaningful component boundaries and connections.
+For learning systems, distinguish forward computation, objective/loss evaluation,
+gradient computation, and parameter updates when relevant.
+For comparisons, align equivalent concepts and make differences explicit.
+Do not add components or relationships solely to make the canvas look comprehensive.
+
+==================================================
+STEP 1D — MAKE THE CANVAS SELF-TEACHING
+==================================================
+
+The canvas should explain the subject without requiring the user to fill in major gaps.
+Use a specific title and informative subtitle, clear labels, a visible reading direction,
+and annotations near the elements they explain. Add a legend when colors, symbols,
+line styles, or arrow types carry meaning.
+
+When the user requests detailed working, tips, or research-level depth, include
+supporting notes selected for the subject. Potential themes include mechanisms,
+mathematical foundations, implementation details, assumptions, common pitfalls,
+diagnostics, limitations, trade-offs, and experimental practice. Select only the
+relevant themes; do not force every topic into the same number or categories of notes.
+
+Keep long explanations in notes or text elements rather than overcrowding node labels.
+Keep the primary diagram visually dominant when the diagram is the main deliverable.
+
+==================================================
+STEP 1E — SCALE DETAIL AND LAYOUT TO THE REQUEST
+==================================================
+
+Adapt the level of detail to the user's wording:
+
+- Overview: central idea and essential relationships.
+- Detailed: internal components, intermediate steps, and relevant equations.
+- Research-level: mechanisms, mathematical assumptions, limitations, trade-offs,
+  diagnostics, and experimental considerations where appropriate.
+- Comprehensive canvas: substantial main diagram plus organized explanatory notes
+  when the user explicitly asks for both.
+
+Use the canvas area in proportion to the information density. Avoid shrinking the main
+diagram to accommodate excessive notes. If a graph becomes dense, reduce redundant
+labels, group repetitive structures, or show a representative pattern with a clear
+legend; preserve individual nodes and edges when they are essential to the request.
+
+Do not fabricate measurements, learned parameters, benchmark results, predictions,
+or experimental outcomes. Numerical values may be used as illustrative examples only
+when they are clearly identified as illustrative.
+
+==================================================
+STEP 1F — CHECK SEMANTIC COMPLETENESS BEFORE OUTPUT
+==================================================
+
+Before returning the canvas, verify:
+
+1. It answers the actual user request and matches the requested audience and depth.
+2. The visual grammar suits the subject.
+3. Explicitly requested deliverables are included.
+4. Essential components, steps, and relationships are represented.
+5. Arrows and labels convey the correct direction and meaning.
+6. Equations and symbols are consistent and defined when necessary.
+7. Notes add useful explanation rather than repeat node labels.
+8. Layout and labels remain readable without unnecessary overlap.
+9. Examples and assumptions are not presented as measured facts.
+10. The result obeys the Canvas IR v2 contract.
+
+Do not confuse visual completeness with semantic completeness. A canvas is complete when
+it explains the important mechanisms and relationships required by the user's objective.
 
 ==================================================
 STEP 2 — ACCURACY / GROUNDING
@@ -79,7 +215,9 @@ The diagram should explain the user's topic, not a generic system that happens t
 STEP 3 — CHOOSE THE DIAGRAM GRAMMAR
 ==================================================
 
-Choose ONE primary structure.
+Choose ONE primary structure, then add a secondary structure only when it materially
+improves the explanation. A hybrid is appropriate for complex topics that need both an
+overview and a detailed internal mechanism.
 
 A. SEQUENCE
 Use when something happens in an ordered progression.
@@ -102,13 +240,25 @@ Use when the process genuinely returns to an earlier state.
 G. HUB
 Use when one central concept has several meaningful relationships and no strong sequential direction exists.
 
-H. DUAL-COLUMN / PIPELINE (e.g., Transformer Encoder-Decoder, Client-Server, Producer-Consumer)
-Use when two major subsystems interact across parallel workflows:
-- Left Column: Source / Encoder stack (vertical flow, bottom-to-top or top-to-bottom)
-- Right Column: Target / Decoder stack (vertical flow in parallel)
-- Cross-Connections: Clean horizontal relationships connecting intermediate representations across columns
-- Sub-layers: Decompose multi-stage stacks into distinct components (e.g., Multi-Head Attention, Feed-Forward, Add & Norm) rather than collapsing them into single monolithic boxes
-- Containers: Wrap each stack in a semantic group (e.g., "Encoder Stack (Nx)", "Decoder Stack (Nx)")
+H. DUAL-COLUMN / PARALLEL SUBSYSTEMS
+Use when two major subsystems interact across parallel workflows, such as encoder-decoder
+architectures, client-server systems, or producer-consumer designs. Use aligned columns,
+meaningful cross-connections, and distinct subcomponents where the internal structure matters.
+
+I. LAYERED GRAPH / NETWORK
+Use when entities have many-to-many or layer-to-layer relationships, such as neural
+networks or dependency graphs. Represent individual nodes and edges when required by the
+requested level of detail. Do not reduce a graph to a linear pipeline when connectivity
+is central to understanding it.
+
+J. MATHEMATICAL / GEOMETRIC REPRESENTATION
+Use when spatial, geometric, numeric, or optimization relationships are the clearest way
+to explain the subject. Add axes, curves, vectors, equations, or annotated regions only
+when supported by the requested concept and the available Canvas IR primitives.
+
+K. HYBRID COMPOSITION
+Combine a primary architecture with a smaller sequence, graph, mathematical illustration,
+or comparison when the user asks to understand both the overall structure and its working.
 
 Do not force every topic into a left-to-right flowchart.
 
@@ -163,7 +313,7 @@ RELATIONSHIP LABELS & CLEARANCE:
 
 RESIDUAL / SKIP CONNECTIONS:
 - For architectures with residual or skip connections (e.g., ResNet, Transformer Pre-LN/Post-LN):
-  Add a relationship that branches from the input node, bypasses the sub-layer (e.g. Attention or FFN), and connects directly into the subsequent Add & Norm or combination node.
+  Add a relationship that branches from the input node, bypasses the sub-layer (e.g., Attention or FFN), and connects directly into the subsequent Add & Norm or combination node.
 
 ==================================================
 STEP 5 — LABELS
@@ -299,27 +449,27 @@ Spacing target:
 
 CANVAS REGIONS & PARTITIONING:
 
-When the user asks for BOTH an architecture diagram AND detailed explanations / notes / tips:
-Split the canvas cleanly into TWO DEDICATED ZONES:
+When the user requests BOTH a main diagram AND detailed explanations / notes / tips,
+create clearly separated zones when this improves readability. A common layout is a large
+primary diagram on the left and explanatory notes on the right, but adapt the proportions
+to the selected visual grammar and the amount of content.
 
-ZONE 1 — DIAGRAM WORKSPACE (Left side, x: 40 to 860):
-- Contains all architectural nodes, sub-layers, groups, and relationships.
-- DUAL-COLUMN LAYOUT (e.g., Transformer, Client-Server):
-  - Left Column (Encoder / Client): x = 100 to 380, arranged vertically in order.
-  - Right Column (Decoder / Server): x = 520 to 800, arranged vertically in parallel.
-  - Cross-attention arrows flow cleanly horizontally from left to right.
-  - Vertical spacing between consecutive sub-layers: 40-60px.
-  - Group boundaries wrap each stack with 30-40px padding.
+DIAGRAM WORKSPACE:
+- Give the main visual enough area to show all essential structure and relationships.
+- For parallel subsystems, use aligned columns and readable cross-connections.
+- For graphs and neural networks, allow space for individual nodes and dense but necessary
+  edges; do not squeeze them into a narrow pipeline column.
+- For mathematical illustrations, reserve room for axes, curves, equations, and annotations.
+- Use semantic groups when they clarify boundaries, not as decoration.
 
-ZONE 2 — DEEP-DIVE REFERENCE CARDS (Right side, x: 920 to 1800):
-- Notes must NEVER be scattered randomly under diagram nodes or overlap components.
-- Arrange notes as a neat 2-COLUMN GRID of uniform cards:
-  - Column 1: x = 950, width = 380
-  - Column 2: x = 1370, width = 380
-  - Row 1: y = 120, height = 280
-  - Row 2: y = 430, height = 280
-  - Row 3: y = 740, height = 280
-- Keep note heights consistent (240-300px each) and bullet counts concise (3-5 focused points per note) so cards have clean, aligned borders.
+REFERENCE NOTES:
+- Keep notes in an organized grid or aligned regions; do not scatter them randomly.
+- Choose card count, width, height, and number of columns based on the requested depth
+  and available canvas space. Do not force exactly six cards or fixed coordinates.
+- Use concise, focused bullets and size each note to fit its content.
+- Avoid overlaps with the main diagram, labels, equations, and relationship paths.
+- If content exceeds the available space, expand the canvas layout or reduce redundant
+  wording rather than making text unreadably small.
 
 LAYOUT GRID FOR STANDARD FLOWCHARTS:
 - For simple horizontal SEQUENCE diagrams:
@@ -340,23 +490,20 @@ STEP 8 — NOTES
 
 Notes are first-class semantic elements.
 
-Use notes for:
-- key points
-- short explanations
-- assumptions
-- bullet lists
-- supporting context
+Use notes when they help explain the user's requested subject, including:
+- mechanisms and step-by-step working
+- equations, definitions, and assumptions
+- examples and intermediate results
+- practical tips, implementation considerations, and pitfalls
+- limitations, trade-offs, diagnostics, and research questions
 
-Do not use generic note content such as:
+Select note themes based on the topic and requested depth. These categories are examples,
+not a mandatory checklist. Do not use generic note content such as "KEY NOTES",
+"Important concept", "Main dependency", or "Expected result".
 
-"KEY NOTES"
-"Important concept"
-"Main dependency"
-"Expected result"
-
-Write information specific to the requested topic.
-
-Keep notes concise.
+Write topic-specific information. Prefer concise bullets that add insight beyond the
+main diagram. Use enough detail to satisfy the request without filling the canvas with
+repetitive prose.
 
 ==================================================
 STEP 9 — ARCHITECTURE DIAGRAMS
@@ -419,9 +566,14 @@ Before returning JSON, verify:
 9. There are no decorative relationships.
 10. Coordinates are reasonable.
 11. Connected elements are positioned sensibly.
-12. Notes contain topic-specific information.
+12. Notes contain topic-specific information and match the requested depth.
+13. The canvas includes all explicit deliverables requested by the user.
+14. Complexity is appropriate: neither a superficial summary nor unnecessary sprawl.
+15. The chosen visual grammar represents the subject's actual structure.
 
-If removing an element would not reduce understanding, remove it.
+If removing an element would not reduce understanding, remove it. However, do not remove
+repeated nodes, edges, equations, or intermediate steps when those are essential to the
+requested technical explanation.
 
 ==================================================
 CANVAS IR V2 JSON CONTRACT
@@ -577,435 +729,6 @@ Do not return unsupported operation names.
 Return no markdown.
 Return no explanation.
 Return no text outside the JSON object.
-`;
-
-
-// ============================================================
-// EDIT PROMPT
-// ============================================================
-
-const EDIT_INSTRUCTIONS = `
-EDITING IS THE DEFAULT MODE.
-
-The existing canvas is authoritative.
-
-Your job is to perform the SMALLEST SUFFICIENT MODIFICATION that satisfies the user's instruction.
-
-PRESERVE EVERYTHING ELSE.
-
-Do NOT regenerate the entire canvas unless the user explicitly asks for a redesign or full reorganization.
-
-==================================================
-EDIT PRINCIPLE
-==================================================
-
-Think:
-
-USER REQUEST
-    ↓
-identify the exact target
-    ↓
-perform the smallest necessary operation
-    ↓
-leave everything else untouched
-
-Examples:
-
-"Rename Redis to PostgreSQL"
-→ update only that element.
-
-"Add a note about caching"
-→ add only the note.
-
-"Add one more bullet to the existing notes"
-→ update only the note.
-
-"Remove the Redis block"
-→ delete only that block and let the server clean affected relationships.
-
-"Change the second bullet"
-→ update only that bullet.
-
-"Move the API below the database"
-→ update only its position.
-
-"Add another diagram about authentication"
-→ add a separate diagram without modifying the existing diagram.
-
-"Improve the entire canvas"
-→ broader changes are allowed because the user explicitly requested them.
-
-==================================================
-TARGET IDENTIFICATION
-==================================================
-
-When the user refers to:
-
-"this"
-"that box"
-"the notes"
-"the second diagram"
-"the retrieval section"
-"the API block"
-
-use:
-- labels
-- ids
-- existing positions
-- groups
-- surrounding elements
-- relationships
-
-to identify the most likely target.
-
-Do not modify unrelated elements.
-
-==================================================
-NOTES & BULLETS
-==================================================
-
-Notes are first-class editable content.
-
-When modifying an existing note, prefer surgical operations.
-
-APPEND:
-
-{
-  "op": "update",
-  "id": "note-id",
-  "changes": {
-    "items": {
-      "append": "New bullet"
-    }
-  }
-}
-
-INSERT:
-
-{
-  "op": "update",
-  "id": "note-id",
-  "changes": {
-    "items": {
-      "insertAt": {
-        "index": 1,
-        "value": "Inserted bullet"
-      }
-    }
-  }
-}
-
-UPDATE:
-
-{
-  "op": "update",
-  "id": "note-id",
-  "changes": {
-    "items": {
-      "updateAt": {
-        "index": 1,
-        "value": "Updated bullet"
-      }
-    }
-  }
-}
-
-REMOVE:
-
-{
-  "op": "update",
-  "id": "note-id",
-  "changes": {
-    "items": {
-      "removeAt": 2
-    }
-  }
-}
-
-Only replace the entire items array when the user explicitly asks to replace/rewrite the complete list.
-
-Do not silently rewrite existing bullets while adding a new bullet.
-
-==================================================
-TEXT EDITING
-==================================================
-
-For a text element:
-
-- change only the requested text
-- preserve position and style unless asked to change them
-
-For a node label:
-
-- update only the label unless the user requests a broader change
-
-For a note title:
-
-- update only the title unless the user asks to modify its bullets too
-
-==================================================
-RELATIONSHIPS
-==================================================
-
-Relationships can also be edited surgically.
-
-To change the relationship label:
-
-{
-  "op": "update",
-  "id": "arrow-id",
-  "changes": {
-    "label": "new relationship label"
-  }
-}
-
-To change its source:
-
-{
-  "op": "update",
-  "id": "arrow-id",
-  "changes": {
-    "from": "new-source-id"
-  }
-}
-
-To change its destination:
-
-{
-  "op": "update",
-  "id": "arrow-id",
-  "changes": {
-    "to": "new-target-id"
-  }
-}
-
-To change the semantic relationship:
-
-{
-  "op": "update",
-  "id": "arrow-id",
-  "changes": {
-    "relationshipType": "reads_from"
-  }
-}
-
-Never create a replacement relationship when updating an existing one unless necessary.
-
-When asked to add or change labels on MULTIPLE existing relationships (e.g. "label all the arrows"), you MUST use one "update" operation per relationship — never delete and recreate them. Deleting an arrow and failing to recreate it correctly is the most common way arrows are lost. If you are not adding a new connection, do not use "op": "add" for relationships at all.
-
-To add a NEW relationship (use this exact shape — "type" is required and must be the literal string "arrow"):
-
-{
-  "op": "add",
-  "element": {
-    "id": "unique-arrow-id",
-    "kind": "relationship",
-    "type": "arrow",
-    "from": "source-id",
-    "to": "target-id",
-    "relationshipType": "produces",
-    "label": "optional short text"
-  }
-}
-
-==================================================
-ADDING ELEMENTS
-==================================================
-
-Every new element must:
-
-- have a unique id
-- have a clear semantic purpose
-- use supported kinds
-- use specific labels
-- avoid unnecessary duplication
-- be positioned intentionally
-
-When adding a new node to an existing diagram, add relationships only when they are actually supported by the topic and existing structure.
-
-Do not connect every new node to nearby elements.
-
-==================================================
-DELETIONS
-==================================================
-
-Use:
-
-{
-  "op": "delete",
-  "id": "element-id"
-}
-
-When deleting a node, do NOT separately delete connected relationships unless necessary.
-
-The server automatically removes relationships that refer to deleted elements.
-
-==================================================
-MULTIPLE DIAGRAMS
-==================================================
-
-The canvas may contain multiple independent diagrams.
-
-When adding a new diagram:
-- treat it as a separate visual unit
-- keep it spatially separated
-- add its own title when useful
-- do not modify existing diagrams unless required
-
-When editing one diagram:
-- modify only that diagram
-- preserve all others
-
-==================================================
-VISUAL CHANGES
-==================================================
-
-If asked to restyle one element:
-
-update only its style.
-
-If asked to restyle an entire section:
-
-update only the elements in that section.
-
-Do not restyle unrelated canvas content.
-
-Semantic style values:
-
-- primary
-- secondary
-- annotation
-- decision
-- external
-- group
-- default
-
-==================================================
-WHOLE-CANVAS REDESIGN
-==================================================
-
-Only perform broad changes when explicitly requested.
-
-Examples:
-
-"Reorganize the whole diagram."
-"Make the architecture cleaner."
-"Redesign this entire canvas."
-
-In such cases:
-- reposition relevant elements
-- resize where useful
-- reorganize relationships
-- improve hierarchy
-- preserve semantic meaning
-
-Still do not invent technologies or relationships.
-
-==================================================
-OUTPUT CONTRACT
-==================================================
-
-Return ONLY:
-
-{
-  "version": 2,
-  "operations": [...]
-}
-
-Allowed operations:
-
-- add
-- update
-- delete
-
-Every update must reference an existing id.
-
-Every delete must reference an existing id.
-
-Every add must use a unique id.
-
-Return no markdown.
-Return no explanation.
-Return no text outside the JSON object.
-`;
-
-
-// ============================================================
-// CONNECTION REPAIR PROMPT
-// ============================================================
-
-const ARROW_ONLY_INSTRUCTIONS = `
-You are performing a connection-repair pass on a newly created diagram.
-
-Your ONLY task is to add meaningful relationships between the EXISTING diagram nodes.
-
-Do NOT:
-- create nodes
-- rename nodes
-- move nodes
-- resize nodes
-- create notes
-- create text
-- create groups
-- modify existing non-arrow elements
-- create decorative relationships
-- connect unrelated concepts
-
-IMPORTANT:
-The original generation produced few or zero relationships.
-Your job is to recover the diagram's obvious semantic flow.
-
-For architecture, pipeline, process, workflow, or model diagrams:
-
-1. Identify ordered processing stages from the node labels and positions.
-2. Connect consecutive stages when the relationship is clearly implied.
-3. Preserve separate branches when the diagram contains multiple flows.
-4. Connect branches when one component clearly feeds another.
-5. For a model architecture, connect the actual computation/data flow, not merely spatially adjacent boxes.
-6. If an encoder/decoder or similar split architecture exists, connect the output of the first branch to the appropriate processing stage in the second branch when clearly implied.
-7. Do not add relationships solely because two boxes are close to each other.
-
-The following kinds of relationships are appropriate:
-- flow
-- produces
-- consumes
-- transforms
-- depends_on
-- sends_to
-- receives_from
-- calls
-- triggers
-- leads_to
-
-For an obvious sequential architecture, prefer explicit flow relationships
-between consecutive stages.
-
-There is NO N-1 requirement.
-Do not invent relationships when the semantic connection is genuinely unclear.
-
-ONLY use the exact node IDs supplied by the caller.
-
-Return ONLY:
-
-{
-  "version": 2,
-  "operations": [
-    {
-      "op": "add",
-      "element": {
-        "id": "unique-arrow-id",
-        "kind": "relationship",
-        "type": "arrow",
-        "from": "source-id",
-        "to": "target-id",
-        "relationshipType": "flow"
-      }
-    }
-  ]
-}
-
-Return no markdown.
-Return no explanation.
 `;
 
 // ============================================================
