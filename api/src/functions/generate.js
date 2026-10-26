@@ -156,7 +156,8 @@ There is NO N-1 relationship requirement.
 A diagram with fewer correct relationships is always better than one with false connections.
 
 RELATIONSHIP LABELS & CLEARANCE:
-- Relationship labels MUST be ultra-concise: 1-2 words (max 10-12 characters, e.g., "Q, K, V", "tokens", "logits", "states", "loss").
+- Relationship labels MUST be ultra-concise: 1-2 words (max 10-12 characters, e.g., "Q, K, V", "tokens", "logits", "loss").
+- DO NOT put redundant labels on direct consecutive steps: If node A flows directly to node B in a vertical stack, leave the arrow UNLABELED. Only label arrows when it adds essential semantic meaning (e.g. "Q", "K, V", "tokens", "residual", "logits")!
 - NEVER place long sentences, bullet points, or paragraphs on a relationship label.
 - Leave at least 140px horizontal clearance or 100px vertical clearance between connected nodes when a relationship has a label.
 
@@ -1226,6 +1227,48 @@ function edgePoint(from, to, offsetIndex = 0, totalFromEdge = 1) {
   };
 }
 
+function hasIntermediateBlock(startBlock, endBlock, nativeMap) {
+  const minY = Math.min(startBlock.y + startBlock.height, endBlock.y + endBlock.height);
+  const maxY = Math.max(startBlock.y, endBlock.y);
+  const minX = Math.min(startBlock.x, endBlock.x);
+  const maxX = Math.max(startBlock.x + startBlock.width, endBlock.x + endBlock.width);
+
+  for (const block of nativeMap.values()) {
+    if (!isNativeBlock(block)) continue;
+    if (block.id === startBlock.id || block.id === endBlock.id) continue;
+    const centerY = block.y + block.height / 2;
+    if (centerY > minY + 10 && centerY < maxY - 10) {
+      if (block.x < maxX && block.x + block.width > minX) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function buildBypassArrowGeometry(startBlock, endBlock, isLeftColumn = false) {
+  // Route cleanly around the outside of intermediate blocks (bypass / residual connection)
+  const sideOffset = isLeftColumn ? -35 : 35;
+
+  const startX = isLeftColumn ? startBlock.x : startBlock.x + startBlock.width;
+  const startY = startBlock.y + startBlock.height / 2;
+  const endX = isLeftColumn ? endBlock.x : endBlock.x + endBlock.width;
+  const endY = endBlock.y + endBlock.height / 2;
+
+  const dy = endY - startY;
+
+  return {
+    x: startX,
+    y: startY,
+    points: [
+      [0, 0],
+      [sideOffset, 0],
+      [sideOffset, dy],
+      [endX - startX, dy]
+    ]
+  };
+}
+
 function buildArrowGeometry(startBlock, endBlock, startIndex = 0, startTotal = 1, endIndex = 0, endTotal = 1) {
   const startPoint = edgePoint(startBlock, endBlock, startIndex, startTotal);
   const endPoint = edgePoint(endBlock, startBlock, endIndex, endTotal);
@@ -1303,14 +1346,28 @@ function rerouteAllArrows(nativeMap) {
     const startIndex = startList.indexOf(id);
     const endIndex = endList.indexOf(id);
 
-    const geometry = buildArrowGeometry(
-      startBlock,
-      endBlock,
-      Math.max(0, startIndex),
-      startList.length,
-      Math.max(0, endIndex),
-      endList.length
-    );
+    const isResidualOrSkip =
+      native.relationshipType === "residual" ||
+      native.relationshipType === "skip" ||
+      (typeof native.label?.text === "string" && /residual|skip|bypass/i.test(native.label.text));
+
+    const needsBypass = isResidualOrSkip || hasIntermediateBlock(startBlock, endBlock, nativeMap);
+
+    let geometry;
+    if (needsBypass) {
+      // Route around the side to avoid passing through intermediate boxes
+      const isLeftColumn = (startBlock.x + startBlock.width / 2) < 450;
+      geometry = buildBypassArrowGeometry(startBlock, endBlock, isLeftColumn);
+    } else {
+      geometry = buildArrowGeometry(
+        startBlock,
+        endBlock,
+        Math.max(0, startIndex),
+        startList.length,
+        Math.max(0, endIndex),
+        endList.length
+      );
+    }
 
     native.x = geometry.x;
     native.y = geometry.y;
@@ -1319,7 +1376,7 @@ function rerouteAllArrows(nativeMap) {
     native.strokeWidth = 2;
     native.roughness = 0;
     if (!native.strokeColor || native.strokeColor === "#1e1e1e") {
-      native.strokeColor = "#495057";
+      native.strokeColor = isResidualOrSkip ? "#e03131" : "#495057"; // Coral red for residual highlights!
     }
   }
 }
@@ -4930,6 +4987,51 @@ function finalizeCreatedScene(elements) {
       native.semanticKind = "note";
     } else if (ir?.kind === "group") {
       native.semanticKind = "group";
+    }
+  }
+
+  // ----------------------------------------------------------
+  // NOTE HEIGHT AUTO-CALCULATION & OVERLAP PREVENTION
+  // ----------------------------------------------------------
+  const noteElements = Array.from(nativeMap.values()).filter((el) => el?.semanticKind === "note");
+
+  // A. Ensure each note card height fits its bullet contents
+  for (const note of noteElements) {
+    const text = note.label?.text || "";
+    const lines = text.split("\n");
+    const approxCharsPerLine = Math.max(25, Math.floor((note.width - 36) / 9.5));
+    let visualLineCount = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        visualLineCount += 0.5;
+      } else {
+        visualLineCount += Math.max(1, Math.ceil(trimmed.length / approxCharsPerLine));
+      }
+    }
+    const requiredHeight = Math.max(180, Math.round(visualLineCount * 22 + 45));
+    if (note.height < requiredHeight) {
+      note.height = requiredHeight;
+    }
+  }
+
+  // B. Group notes into columns by X position and sort by Y to prevent vertical overlaps
+  const noteColumns = new Map();
+  for (const note of noteElements) {
+    const colKey = Math.round(note.x / 100) * 100;
+    if (!noteColumns.has(colKey)) noteColumns.set(colKey, []);
+    noteColumns.get(colKey).push(note);
+  }
+
+  for (const colNotes of noteColumns.values()) {
+    colNotes.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < colNotes.length; i++) {
+      const prev = colNotes[i - 1];
+      const curr = colNotes[i];
+      const minSafeY = prev.y + prev.height + 36;
+      if (curr.y < minSafeY) {
+        curr.y = minSafeY;
+      }
     }
   }
 
