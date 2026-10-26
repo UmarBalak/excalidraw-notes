@@ -731,6 +731,435 @@ Return no explanation.
 Return no text outside the JSON object.
 `;
 
+
+// ============================================================
+// EDIT PROMPT
+// ============================================================
+
+const EDIT_INSTRUCTIONS = `
+EDITING IS THE DEFAULT MODE.
+
+The existing canvas is authoritative.
+
+Your job is to perform the SMALLEST SUFFICIENT MODIFICATION that satisfies the user's instruction.
+
+PRESERVE EVERYTHING ELSE.
+
+Do NOT regenerate the entire canvas unless the user explicitly asks for a redesign or full reorganization.
+
+==================================================
+EDIT PRINCIPLE
+==================================================
+
+Think:
+
+USER REQUEST
+    ↓
+identify the exact target
+    ↓
+perform the smallest necessary operation
+    ↓
+leave everything else untouched
+
+Examples:
+
+"Rename Redis to PostgreSQL"
+→ update only that element.
+
+"Add a note about caching"
+→ add only the note.
+
+"Add one more bullet to the existing notes"
+→ update only the note.
+
+"Remove the Redis block"
+→ delete only that block and let the server clean affected relationships.
+
+"Change the second bullet"
+→ update only that bullet.
+
+"Move the API below the database"
+→ update only its position.
+
+"Add another diagram about authentication"
+→ add a separate diagram without modifying the existing diagram.
+
+"Improve the entire canvas"
+→ broader changes are allowed because the user explicitly requested them.
+
+==================================================
+TARGET IDENTIFICATION
+==================================================
+
+When the user refers to:
+
+"this"
+"that box"
+"the notes"
+"the second diagram"
+"the retrieval section"
+"the API block"
+
+use:
+- labels
+- ids
+- existing positions
+- groups
+- surrounding elements
+- relationships
+
+to identify the most likely target.
+
+Do not modify unrelated elements.
+
+==================================================
+NOTES & BULLETS
+==================================================
+
+Notes are first-class editable content.
+
+When modifying an existing note, prefer surgical operations.
+
+APPEND:
+
+{
+  "op": "update",
+  "id": "note-id",
+  "changes": {
+    "items": {
+      "append": "New bullet"
+    }
+  }
+}
+
+INSERT:
+
+{
+  "op": "update",
+  "id": "note-id",
+  "changes": {
+    "items": {
+      "insertAt": {
+        "index": 1,
+        "value": "Inserted bullet"
+      }
+    }
+  }
+}
+
+UPDATE:
+
+{
+  "op": "update",
+  "id": "note-id",
+  "changes": {
+    "items": {
+      "updateAt": {
+        "index": 1,
+        "value": "Updated bullet"
+      }
+    }
+  }
+}
+
+REMOVE:
+
+{
+  "op": "update",
+  "id": "note-id",
+  "changes": {
+    "items": {
+      "removeAt": 2
+    }
+  }
+}
+
+Only replace the entire items array when the user explicitly asks to replace/rewrite the complete list.
+
+Do not silently rewrite existing bullets while adding a new bullet.
+
+==================================================
+TEXT EDITING
+==================================================
+
+For a text element:
+
+- change only the requested text
+- preserve position and style unless asked to change them
+
+For a node label:
+
+- update only the label unless the user requests a broader change
+
+For a note title:
+
+- update only the title unless the user asks to modify its bullets too
+
+==================================================
+RELATIONSHIPS
+==================================================
+
+Relationships can also be edited surgically.
+
+To change the relationship label:
+
+{
+  "op": "update",
+  "id": "arrow-id",
+  "changes": {
+    "label": "new relationship label"
+  }
+}
+
+To change its source:
+
+{
+  "op": "update",
+  "id": "arrow-id",
+  "changes": {
+    "from": "new-source-id"
+  }
+}
+
+To change its destination:
+
+{
+  "op": "update",
+  "id": "arrow-id",
+  "changes": {
+    "to": "new-target-id"
+  }
+}
+
+To change the semantic relationship:
+
+{
+  "op": "update",
+  "id": "arrow-id",
+  "changes": {
+    "relationshipType": "reads_from"
+  }
+}
+
+Never create a replacement relationship when updating an existing one unless necessary.
+
+When asked to add or change labels on MULTIPLE existing relationships (e.g. "label all the arrows"), you MUST use one "update" operation per relationship — never delete and recreate them. Deleting an arrow and failing to recreate it correctly is the most common way arrows are lost. If you are not adding a new connection, do not use "op": "add" for relationships at all.
+
+To add a NEW relationship (use this exact shape — "type" is required and must be the literal string "arrow"):
+
+{
+  "op": "add",
+  "element": {
+    "id": "unique-arrow-id",
+    "kind": "relationship",
+    "type": "arrow",
+    "from": "source-id",
+    "to": "target-id",
+    "relationshipType": "produces",
+    "label": "optional short text"
+  }
+}
+
+==================================================
+ADDING ELEMENTS
+==================================================
+
+Every new element must:
+
+- have a unique id
+- have a clear semantic purpose
+- use supported kinds
+- use specific labels
+- avoid unnecessary duplication
+- be positioned intentionally
+
+When adding a new node to an existing diagram, add relationships only when they are actually supported by the topic and existing structure.
+
+Do not connect every new node to nearby elements.
+
+==================================================
+DELETIONS
+==================================================
+
+Use:
+
+{
+  "op": "delete",
+  "id": "element-id"
+}
+
+When deleting a node, do NOT separately delete connected relationships unless necessary.
+
+The server automatically removes relationships that refer to deleted elements.
+
+==================================================
+MULTIPLE DIAGRAMS
+==================================================
+
+The canvas may contain multiple independent diagrams.
+
+When adding a new diagram:
+- treat it as a separate visual unit
+- keep it spatially separated
+- add its own title when useful
+- do not modify existing diagrams unless required
+
+When editing one diagram:
+- modify only that diagram
+- preserve all others
+
+==================================================
+VISUAL CHANGES
+==================================================
+
+If asked to restyle one element:
+
+update only its style.
+
+If asked to restyle an entire section:
+
+update only the elements in that section.
+
+Do not restyle unrelated canvas content.
+
+Semantic style values:
+
+- primary
+- secondary
+- annotation
+- decision
+- external
+- group
+- default
+
+==================================================
+WHOLE-CANVAS REDESIGN
+==================================================
+
+Only perform broad changes when explicitly requested.
+
+Examples:
+
+"Reorganize the whole diagram."
+"Make the architecture cleaner."
+"Redesign this entire canvas."
+
+In such cases:
+- reposition relevant elements
+- resize where useful
+- reorganize relationships
+- improve hierarchy
+- preserve semantic meaning
+
+Still do not invent technologies or relationships.
+
+==================================================
+OUTPUT CONTRACT
+==================================================
+
+Return ONLY:
+
+{
+  "version": 2,
+  "operations": [...]
+}
+
+Allowed operations:
+
+- add
+- update
+- delete
+
+Every update must reference an existing id.
+
+Every delete must reference an existing id.
+
+Every add must use a unique id.
+
+Return no markdown.
+Return no explanation.
+Return no text outside the JSON object.
+`;
+
+
+// ============================================================
+// CONNECTION REPAIR PROMPT
+// ============================================================
+
+const ARROW_ONLY_INSTRUCTIONS = `
+You are performing a connection-repair pass on a newly created diagram.
+
+Your ONLY task is to add meaningful relationships between the EXISTING diagram nodes.
+
+Do NOT:
+- create nodes
+- rename nodes
+- move nodes
+- resize nodes
+- create notes
+- create text
+- create groups
+- modify existing non-arrow elements
+- create decorative relationships
+- connect unrelated concepts
+
+IMPORTANT:
+The original generation produced few or zero relationships.
+Your job is to recover the diagram's obvious semantic flow.
+
+For architecture, pipeline, process, workflow, or model diagrams:
+
+1. Identify ordered processing stages from the node labels and positions.
+2. Connect consecutive stages when the relationship is clearly implied.
+3. Preserve separate branches when the diagram contains multiple flows.
+4. Connect branches when one component clearly feeds another.
+5. For a model architecture, connect the actual computation/data flow, not merely spatially adjacent boxes.
+6. If an encoder/decoder or similar split architecture exists, connect the output of the first branch to the appropriate processing stage in the second branch when clearly implied.
+7. Do not add relationships solely because two boxes are close to each other.
+
+The following kinds of relationships are appropriate:
+- flow
+- produces
+- consumes
+- transforms
+- depends_on
+- sends_to
+- receives_from
+- calls
+- triggers
+- leads_to
+
+For an obvious sequential architecture, prefer explicit flow relationships
+between consecutive stages.
+
+There is NO N-1 requirement.
+Do not invent relationships when the semantic connection is genuinely unclear.
+
+ONLY use the exact node IDs supplied by the caller.
+
+Return ONLY:
+
+{
+  "version": 2,
+  "operations": [
+    {
+      "op": "add",
+      "element": {
+        "id": "unique-arrow-id",
+        "kind": "relationship",
+        "type": "arrow",
+        "from": "source-id",
+        "to": "target-id",
+        "relationshipType": "flow"
+      }
+    }
+  ]
+}
+
+Return no markdown.
+Return no explanation.
+`;
+
 // ============================================================
 // JSON PARSING
 // ============================================================
