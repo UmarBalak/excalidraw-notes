@@ -47,12 +47,13 @@ Before producing JSON, determine:
 5. Which elements are primary versus secondary?
 
 Prefer:
-- 4 strong elements over 9 weak elements
+- 6-16 meaningful elements for complex architectures (e.g., deep learning models, compiler pipelines, distributed systems) over superficial 3-box summaries
 - meaningful relationships over decorative connections
 - specific terminology over generic labels
 - whitespace over unnecessary density
+- structured layout zones over scattered elements
 
-Prefer quality, clarity, and relevance over sheer element count.
+Prefer quality, clarity, and architectural accuracy over superficial over-simplification.
 
 ==================================================
 STEP 2 — ACCURACY / GROUNDING
@@ -101,6 +102,14 @@ Use when the process genuinely returns to an earlier state.
 G. HUB
 Use when one central concept has several meaningful relationships and no strong sequential direction exists.
 
+H. DUAL-COLUMN / PIPELINE (e.g., Transformer Encoder-Decoder, Client-Server, Producer-Consumer)
+Use when two major subsystems interact across parallel workflows:
+- Left Column: Source / Encoder stack (vertical flow, bottom-to-top or top-to-bottom)
+- Right Column: Target / Decoder stack (vertical flow in parallel)
+- Cross-Connections: Clean horizontal relationships connecting intermediate representations across columns
+- Sub-layers: Decompose multi-stage stacks into distinct components (e.g., Multi-Head Attention, Feed-Forward, Add & Norm) rather than collapsing them into single monolithic boxes
+- Containers: Wrap each stack in a semantic group (e.g., "Encoder Stack (Nx)", "Decoder Stack (Nx)")
+
 Do not force every topic into a left-to-right flowchart.
 
 ==================================================
@@ -145,6 +154,15 @@ Do NOT add relationships merely to make the diagram appear connected.
 There is NO N-1 relationship requirement.
 
 A diagram with fewer correct relationships is always better than one with false connections.
+
+RELATIONSHIP LABELS & CLEARANCE:
+- Relationship labels MUST be ultra-concise: 1-2 words (max 10-12 characters, e.g., "Q, K, V", "tokens", "logits", "states", "loss").
+- NEVER place long sentences, bullet points, or paragraphs on a relationship label.
+- Leave at least 140px horizontal clearance or 100px vertical clearance between connected nodes when a relationship has a label.
+
+RESIDUAL / SKIP CONNECTIONS:
+- For architectures with residual or skip connections (e.g., ResNet, Transformer Pre-LN/Post-LN):
+  Add a relationship that branches from the input node, bypasses the sub-layer (e.g. Attention or FFN), and connects directly into the subsequent Add & Norm or combination node.
 
 ==================================================
 STEP 5 — LABELS
@@ -278,29 +296,40 @@ Spacing target:
 - at least 80px horizontal spacing between node edges
 - at least 60px vertical spacing between rows
 
-LAYOUT GRID SYSTEM:
+CANVAS REGIONS & PARTITIONING:
 
-For SEQUENCE / FAN-OUT / CONVERGENCE diagrams:
-- Arrange nodes in rows or columns with clear alignment.
-- Each row shares the same y coordinate; each column shares the same x coordinate.
-- Row 1 starts at y=120 (below the title).
-- Each subsequent row increments y by 160-200.
-- Within a row, nodes start at x=100 and increment by (node_width + 100).
-- Center-align rows relative to the widest row.
+When the user asks for BOTH an architecture diagram AND detailed explanations / notes / tips:
+Split the canvas cleanly into TWO DEDICATED ZONES:
 
-For HUB diagrams:
-- Place the central hub node at (600, 400).
-- Distribute connected nodes around the hub with at least 120px clearance.
+ZONE 1 — DIAGRAM WORKSPACE (Left side, x: 40 to 860):
+- Contains all architectural nodes, sub-layers, groups, and relationships.
+- DUAL-COLUMN LAYOUT (e.g., Transformer, Client-Server):
+  - Left Column (Encoder / Client): x = 100 to 380, arranged vertically in order.
+  - Right Column (Decoder / Server): x = 520 to 800, arranged vertically in parallel.
+  - Cross-attention arrows flow cleanly horizontally from left to right.
+  - Vertical spacing between consecutive sub-layers: 40-60px.
+  - Group boundaries wrap each stack with 30-40px padding.
 
-For COMPARISON diagrams:
-- Left column: x range 100-500.
-- Right column: x range 700-1100.
-- Shared title centered at x=600.
+ZONE 2 — DEEP-DIVE REFERENCE CARDS (Right side, x: 920 to 1800):
+- Notes must NEVER be scattered randomly under diagram nodes or overlap components.
+- Arrange notes as a neat 2-COLUMN GRID of uniform cards:
+  - Column 1: x = 950, width = 380
+  - Column 2: x = 1370, width = 380
+  - Row 1: y = 120, height = 280
+  - Row 2: y = 430, height = 280
+  - Row 3: y = 740, height = 280
+- Keep note heights consistent (240-300px each) and bullet counts concise (3-5 focused points per note) so cards have clean, aligned borders.
+
+LAYOUT GRID FOR STANDARD FLOWCHARTS:
+- For simple horizontal SEQUENCE diagrams:
+  - Within a row, nodes start at x=100 and increment by (node_width + 120).
+- For HUB diagrams:
+  - Place central hub node at (500, 400). Connected nodes at 140px clearance.
 
 RELATIONSHIP-FRIENDLY POSITIONING:
 - When node A connects to node B, position them so one edge of A directly faces one edge of B (horizontally or vertically aligned).
 - Avoid diagonal placements between connected nodes whenever possible.
-- Leave at least 80px of clear space between the nearest edges of connected nodes for the relationship to render cleanly.
+- Leave at least 140px horizontal clearance (or 90px vertical clearance) between connected nodes when a relationship has a label.
 
 Advanced collision detection and routing are handled by application code, not by assuming model coordinates are perfect.
 
@@ -1310,53 +1339,52 @@ function rerouteAllArrows(nativeMap) {
  */
 const THEME_STYLES = {
   primary: {
-    backgroundColor: "#d0ebff",
-    strokeColor: "#1864ab",
+    backgroundColor: "#e7f5ff",
+    strokeColor: "#1971c2",
     fillStyle: "solid",
     roughness: 0,
     strokeWidth: 2
   },
 
   secondary: {
-    backgroundColor: "#e5dbff",
-    strokeColor: "#5f3dc4",
+    backgroundColor: "#f3f0ff",
+    strokeColor: "#6741d9",
     fillStyle: "solid",
     roughness: 0,
-    strokeWidth: 1
+    strokeWidth: 2
   },
 
   annotation: {
-    backgroundColor: "#fff9db",
-    strokeColor: "#e67700",
-    fillStyle: "solid",
-    roughness: 0,
-    strokeWidth: 1
+    backgroundColor: "#fff3cd",
+    strokeColor: "#f08c00",
+    fillStyle: "hachure",
+    roughness: 1,
+    strokeWidth: 2
   },
 
   decision: {
-    backgroundColor: "#d3f9d8",
-    strokeColor: "#087f5b",
+    backgroundColor: "#ebfbee",
+    strokeColor: "#2b8a3e",
     fillStyle: "solid",
     roughness: 0,
     strokeWidth: 2
   },
 
   external: {
-    backgroundColor: "#f1f3f5",
-    strokeColor: "#495057",
+    backgroundColor: "#f8f9fa",
+    strokeColor: "#868e96",
     fillStyle: "solid",
     roughness: 0,
-    strokeWidth: 1,
-    strokeStyle: "dashed"
+    strokeWidth: 1.5
   },
 
   group: {
-    backgroundColor: "#f8f9fa",
-    strokeColor: "#adb5bd",
-    fillStyle: "solid",
-    strokeLineDash: [12, 6],
+    backgroundColor: "transparent",
+    strokeColor: "#ced4da",
+    fillStyle: "hachure",
+    strokeLineDash: [8, 8],
     roughness: 0,
-    strokeWidth: 1
+    strokeWidth: 1.5
   },
 
   default: {
@@ -1364,7 +1392,7 @@ const THEME_STYLES = {
     strokeColor: "#343a40",
     fillStyle: "solid",
     roughness: 0,
-    strokeWidth: 1
+    strokeWidth: 1.5
   }
 };
 
@@ -2266,12 +2294,14 @@ function renderSingleIRNode(element) {
     const label =
       cleanText(
         element.label,
-        100
+        40
       );
 
     if (label) {
+      // Keep arrow labels concise (max 20 chars) to prevent box collisions
+      const shortLabel = label.length > 20 ? label.slice(0, 18).trim() + "..." : label;
       out.label = {
-        text: label
+        text: shortLabel
       };
     }
 
