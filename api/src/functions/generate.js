@@ -6,6 +6,11 @@ const { OpenAI } = require("openai");
 // PROMPTS
 // ============================================================
 
+// UI GUIDELINES (not sent to the model):
+// - Do not create elements solely because the diagram seems empty.
+// - Avoid adding relationships merely for visual density.
+// - All relationships must convey a meaningful semantic connection.
+
 const CREATE_INSTRUCTIONS = `
 You are an expert technical diagram designer generating structured Canvas IR version 2.
 
@@ -43,11 +48,11 @@ Before producing JSON, determine:
 
 Prefer:
 - 4 strong elements over 9 weak elements
-- meaningful relationships over decorative arrows
+- meaningful relationships over decorative connections
 - specific terminology over generic labels
 - whitespace over unnecessary density
 
-Do not create an element simply because the diagram "needs more content."
+Prefer quality, clarity, and relevance over sheer element count.
 
 ==================================================
 STEP 2 — ACCURACY / GROUNDING
@@ -107,6 +112,14 @@ Think about the diagram as:
 NODES:
 meaningful concepts, components, actions, states, or external systems.
 
+ID CONVENTION:
+Every node must have a stable id derived from a slugified, lower-case version of its label.
+Examples:
+  "User Query"      -> id: "user-query"
+  "Vector Database"  -> id: "vector-database"
+  "LLM Response"     -> id: "llm-response"
+This makes ids predictable and prevents duplicate or random ids.
+
 RELATIONSHIPS:
 real semantic connections between nodes.
 
@@ -127,11 +140,11 @@ Every relationship must communicate something meaningful, such as:
 - compares_with
 - leads_to
 
-Do NOT add arrows merely to make the diagram appear connected.
+Do NOT add relationships merely to make the diagram appear connected.
 
-There is NO N-1 arrow requirement.
+There is NO N-1 relationship requirement.
 
-A diagram with fewer correct arrows is better than one containing false relationships.
+A diagram with fewer correct relationships is always better than one with false connections.
 
 ==================================================
 STEP 5 — LABELS
@@ -197,7 +210,7 @@ Node types:
 Do not use shapes merely for decoration.
 
 ==================================================
-STEP 7 — SEMANTIC METADATA
+STEP 7 — OPTIONAL METADATA & LAYOUT
 ==================================================
 
 Optional metadata may be used when it improves clarity.
@@ -231,49 +244,68 @@ style.visual:
 IMPORTANT:
 
 role = semantic importance.
-
 style.visual = visual treatment.
-
 Do not assume that role automatically determines visual style.
 
-==================================================
-STEP 8 — LAYOUT
-==================================================
+SIZE BY ROLE:
+- hero:                width 220-280, height 90-120
+- primary:             width 160-220, height 70-90
+- secondary:           width 140-180, height 60-80
+- supporting/external: width 120-160, height 55-75
+- decision (diamond):  width 140-180, height 100-140
+
+These ranges ensure visual hierarchy is immediately apparent.
+
+LAYOUT COORDINATES & SPACING:
 
 The model provides useful initial coordinates.
 
 Use:
-
 x: 0-6000
 y: 0-3000
 
 Title:
 - approximately x=40
 - approximately y=25
-- fontSize around 28-32
+- fontSize around 28-36
 
 Main diagram:
-- centered below the title
+- positioned below the title
 - aligned in logical rows and columns
 - consistent spacing
 
 Spacing target:
-- at least 60px horizontal spacing
-- at least 40px vertical spacing
+- at least 80px horizontal spacing between node edges
+- at least 60px vertical spacing between rows
 
-Connected elements should be positioned so their nearest edges naturally face each other.
+LAYOUT GRID SYSTEM:
 
-Avoid:
-- random scattered placement
-- unnecessary diagonal layouts
-- dense clusters
-- giant unexplained gaps
-- unrelated elements placed directly between connected elements
+For SEQUENCE / FAN-OUT / CONVERGENCE diagrams:
+- Arrange nodes in rows or columns with clear alignment.
+- Each row shares the same y coordinate; each column shares the same x coordinate.
+- Row 1 starts at y=120 (below the title).
+- Each subsequent row increments y by 160-200.
+- Within a row, nodes start at x=100 and increment by (node_width + 100).
+- Center-align rows relative to the widest row.
+
+For HUB diagrams:
+- Place the central hub node at (600, 400).
+- Distribute connected nodes around the hub with at least 120px clearance.
+
+For COMPARISON diagrams:
+- Left column: x range 100-500.
+- Right column: x range 700-1100.
+- Shared title centered at x=600.
+
+RELATIONSHIP-FRIENDLY POSITIONING:
+- When node A connects to node B, position them so one edge of A directly faces one edge of B (horizontally or vertically aligned).
+- Avoid diagonal placements between connected nodes whenever possible.
+- Leave at least 80px of clear space between the nearest edges of connected nodes for the relationship to render cleanly.
 
 Advanced collision detection and routing are handled by application code, not by assuming model coordinates are perfect.
 
 ==================================================
-STEP 9 — NOTES
+STEP 8 — NOTES
 ==================================================
 
 Notes are first-class semantic elements.
@@ -297,7 +329,7 @@ Write information specific to the requested topic.
 Keep notes concise.
 
 ==================================================
-STEP 10 — ARCHITECTURE DIAGRAMS
+STEP 9 — ARCHITECTURE DIAGRAMS
 ==================================================
 
 For software/system architecture:
@@ -329,7 +361,7 @@ For example:
 only when those technologies are actually known.
 
 ==================================================
-STEP 11 — COMPARISONS
+STEP 10 — COMPARISONS
 ==================================================
 
 For comparisons:
@@ -341,7 +373,7 @@ For comparisons:
 - make the contrast obvious through structure
 
 ==================================================
-STEP 12 — FINAL SELF-CHECK
+STEP 11 — FINAL SELF-CHECK
 ==================================================
 
 Before returning JSON, verify:
@@ -354,7 +386,7 @@ Before returning JSON, verify:
 6. Labels are specific and readable.
 7. Important elements have appropriate hierarchy.
 8. There are no unnecessary elements.
-9. There are no decorative arrows.
+9. There are no decorative relationships.
 10. Coordinates are reasonable.
 11. Connected elements are positioned sensibly.
 12. Notes contain topic-specific information.
@@ -886,7 +918,7 @@ Do NOT:
 - create text
 - create groups
 - modify existing non-arrow elements
-- create decorative arrows
+- create decorative relationships
 - connect unrelated concepts
 
 IMPORTANT:
@@ -901,7 +933,7 @@ For architecture, pipeline, process, workflow, or model diagrams:
 4. Connect branches when one component clearly feeds another.
 5. For a model architecture, connect the actual computation/data flow, not merely spatially adjacent boxes.
 6. If an encoder/decoder or similar split architecture exists, connect the output of the first branch to the appropriate processing stage in the second branch when clearly implied.
-7. Do not add arrows solely because two boxes are close to each other.
+7. Do not add relationships solely because two boxes are close to each other.
 
 The following kinds of relationships are appropriate:
 - flow
@@ -1133,7 +1165,7 @@ function cleanId(value) {
  * More advanced collision-aware routing belongs in the renderer
  * layer later.
  */
-function edgePoint(from, to) {
+function edgePoint(from, to, offsetIndex = 0, totalFromEdge = 1) {
   const fromCenterX = from.x + from.width / 2;
   const fromCenterY = from.y + from.height / 2;
 
@@ -1143,26 +1175,31 @@ function edgePoint(from, to) {
   const dx = toCenterX - fromCenterX;
   const dy = toCenterY - fromCenterY;
 
+  // Spread multiple arrows connected to the same edge
+  const edgeSpread = totalFromEdge > 1
+    ? (offsetIndex - (totalFromEdge - 1) / 2) * 20
+    : 0;
+
   if (Math.abs(dx) >= Math.abs(dy)) {
     return {
       x: dx >= 0
         ? from.x + from.width
         : from.x,
-      y: fromCenterY
+      y: Math.max(from.y + 10, Math.min(from.y + from.height - 10, fromCenterY + edgeSpread))
     };
   }
 
   return {
-    x: fromCenterX,
+    x: Math.max(from.x + 10, Math.min(from.x + from.width - 10, fromCenterX + edgeSpread)),
     y: dy >= 0
       ? from.y + from.height
       : from.y
   };
 }
 
-function buildArrowGeometry(startBlock, endBlock) {
-  const startPoint = edgePoint(startBlock, endBlock);
-  const endPoint = edgePoint(endBlock, startBlock);
+function buildArrowGeometry(startBlock, endBlock, startIndex = 0, startTotal = 1, endIndex = 0, endTotal = 1) {
+  const startPoint = edgePoint(startBlock, endBlock, startIndex, startTotal);
+  const endPoint = edgePoint(endBlock, startBlock, endIndex, endTotal);
 
   return {
     x: startPoint.x,
@@ -1175,6 +1212,87 @@ function buildArrowGeometry(startBlock, endBlock) {
       ]
     ]
   };
+}
+
+function rerouteAllArrows(nativeMap) {
+  const startEdgeGroups = new Map();
+  const endEdgeGroups = new Map();
+
+  function getFacingEdge(fromBlock, toBlock) {
+    const fromCX = fromBlock.x + fromBlock.width / 2;
+    const fromCY = fromBlock.y + fromBlock.height / 2;
+    const toCX = toBlock.x + toBlock.width / 2;
+    const toCY = toBlock.y + toBlock.height / 2;
+    const dx = toCX - fromCX;
+    const dy = toCY - fromCY;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      return dx >= 0 ? "right" : "left";
+    }
+    return dy >= 0 ? "bottom" : "top";
+  }
+
+  for (const [id, native] of nativeMap) {
+    if (!isNativeArrow(native)) continue;
+    const startId = getArrowEndpointId(native, "start");
+    const endId = getArrowEndpointId(native, "end");
+    if (!startId || !endId) continue;
+    const startBlock = nativeMap.get(startId);
+    const endBlock = nativeMap.get(endId);
+    if (!startBlock || !endBlock || !isNativeBlock(startBlock) || !isNativeBlock(endBlock)) continue;
+
+    const startEdge = getFacingEdge(startBlock, endBlock);
+    const endEdge = getFacingEdge(endBlock, startBlock);
+
+    const startKey = `${startId}:${startEdge}`;
+    const endKey = `${endId}:${endEdge}`;
+
+    if (!startEdgeGroups.has(startKey)) startEdgeGroups.set(startKey, []);
+    startEdgeGroups.get(startKey).push(id);
+
+    if (!endEdgeGroups.has(endKey)) endEdgeGroups.set(endKey, []);
+    endEdgeGroups.get(endKey).push(id);
+  }
+
+  for (const [id, native] of nativeMap) {
+    if (!isNativeArrow(native)) continue;
+    const startId = getArrowEndpointId(native, "start");
+    const endId = getArrowEndpointId(native, "end");
+    if (!startId || !endId) continue;
+    const startBlock = nativeMap.get(startId);
+    const endBlock = nativeMap.get(endId);
+    if (!startBlock || !endBlock || !isNativeBlock(startBlock) || !isNativeBlock(endBlock)) continue;
+
+    const startEdge = getFacingEdge(startBlock, endBlock);
+    const endEdge = getFacingEdge(endBlock, startBlock);
+
+    const startKey = `${startId}:${startEdge}`;
+    const endKey = `${endId}:${endEdge}`;
+
+    const startList = startEdgeGroups.get(startKey) || [id];
+    const endList = endEdgeGroups.get(endKey) || [id];
+
+    const startIndex = startList.indexOf(id);
+    const endIndex = endList.indexOf(id);
+
+    const geometry = buildArrowGeometry(
+      startBlock,
+      endBlock,
+      Math.max(0, startIndex),
+      startList.length,
+      Math.max(0, endIndex),
+      endList.length
+    );
+
+    native.x = geometry.x;
+    native.y = geometry.y;
+    native.points = geometry.points;
+    native.endArrowhead = "arrow";
+    native.strokeWidth = 2;
+    native.roughness = 0;
+    if (!native.strokeColor || native.strokeColor === "#1e1e1e") {
+      native.strokeColor = "#495057";
+    }
+  }
 }
 
 
@@ -1192,54 +1310,70 @@ function buildArrowGeometry(startBlock, endBlock) {
  */
 const THEME_STYLES = {
   primary: {
-    backgroundColor: "#e7f5ff",
-    strokeColor: "#1971c2",
+    backgroundColor: "#d0ebff",
+    strokeColor: "#1864ab",
     fillStyle: "solid",
-    roughness: 0
+    roughness: 0,
+    strokeWidth: 2
   },
 
   secondary: {
-    backgroundColor: "#f3f0ff",
-    strokeColor: "#6741d9",
+    backgroundColor: "#e5dbff",
+    strokeColor: "#5f3dc4",
     fillStyle: "solid",
-    roughness: 0
+    roughness: 0,
+    strokeWidth: 1
   },
 
   annotation: {
-    backgroundColor: "#fff3cd",
-    strokeColor: "#f08c00",
-    fillStyle: "hachure",
-    roughness: 1
+    backgroundColor: "#fff9db",
+    strokeColor: "#e67700",
+    fillStyle: "solid",
+    roughness: 0,
+    strokeWidth: 1
   },
 
   decision: {
-    backgroundColor: "#ebfbee",
-    strokeColor: "#2b8a3e",
+    backgroundColor: "#d3f9d8",
+    strokeColor: "#087f5b",
     fillStyle: "solid",
-    roughness: 0
+    roughness: 0,
+    strokeWidth: 2
   },
 
   external: {
-    backgroundColor: "#f8f9fa",
-    strokeColor: "#868e96",
+    backgroundColor: "#f1f3f5",
+    strokeColor: "#495057",
     fillStyle: "solid",
-    roughness: 0
+    roughness: 0,
+    strokeWidth: 1,
+    strokeStyle: "dashed"
   },
 
   group: {
-    backgroundColor: "transparent",
-    strokeColor: "#ced4da",
-    fillStyle: "hachure",
-    strokeLineDash: [8, 8],
-    roughness: 0
+    backgroundColor: "#f8f9fa",
+    strokeColor: "#adb5bd",
+    fillStyle: "solid",
+    strokeLineDash: [12, 6],
+    roughness: 0,
+    strokeWidth: 1
   },
 
   default: {
-    backgroundColor: "transparent",
-    strokeColor: "#1e1e1e",
-    fillStyle: "hachure",
-    roughness: 1
+    backgroundColor: "#ffffff",
+    strokeColor: "#343a40",
+    fillStyle: "solid",
+    roughness: 0,
+    strokeWidth: 1
   }
+};
+
+const LEGACY_THEME_STYLES = {
+  primary: { backgroundColor: "#e7f5ff", strokeColor: "#1971c2" },
+  secondary: { backgroundColor: "#f3f0ff", strokeColor: "#6741d9" },
+  annotation: { backgroundColor: "#fff3cd", strokeColor: "#f08c00" },
+  decision: { backgroundColor: "#ebfbee", strokeColor: "#2b8a3e" },
+  external: { backgroundColor: "#f8f9fa", strokeColor: "#868e96" }
 };
 
 function getExcalidrawStyle(visualStyle) {
@@ -1477,13 +1611,6 @@ function isGroupIR(element) {
   return (
     element &&
     element.kind === "group"
-  );
-}
-
-function isRenderableBlockIR(element) {
-  return (
-    isNodeIR(element) ||
-    isNoteIR(element)
   );
 }
 
@@ -2048,6 +2175,18 @@ function detectVisualStyleFromNativeElement(
     }
   }
 
+  for (const [
+    styleName,
+    style
+  ] of Object.entries(LEGACY_THEME_STYLES)) {
+    if (
+      background === style.backgroundColor &&
+      stroke === style.strokeColor
+    ) {
+      return styleName;
+    }
+  }
+
   return undefined;
 }
 
@@ -2118,8 +2257,10 @@ function renderSingleIRNode(element) {
         elementId: cleanId(element.to)
       },
 
-      strokeColor: "#1e1e1e",
-      roughness: 1
+      strokeColor: "#495057",
+      strokeWidth: 2,
+      roughness: 0,
+      endArrowhead: "arrow"
     };
 
     const label =
@@ -2167,7 +2308,7 @@ function renderSingleIRNode(element) {
               Math.round(
                 element.style.fontSize
               ),
-              36
+              48
             )
           )
         : 20;
@@ -2191,7 +2332,7 @@ function renderSingleIRNode(element) {
         "transparent",
 
       strokeColor:
-        "#1e1e1e"
+        "#212529"
     };
   }
 
@@ -3363,6 +3504,10 @@ function applyOperationsToCanvas(
       arrow,
       nativeMap
     );
+  }
+
+  if (arrowsToReroute.size > 0) {
+    rerouteAllArrows(nativeMap);
   }
 
   // ==========================================================
@@ -4758,11 +4903,7 @@ function finalizeCreatedScene(elements) {
     }
   }
 
-  for (const native of nativeMap.values()) {
-    if (isNativeArrow(native)) {
-      rerouteNativeArrow(native, nativeMap);
-    }
-  }
+  rerouteAllArrows(nativeMap);
 
   return orderNativeElements(nativeMap, nativeElements);
 }
@@ -4852,8 +4993,8 @@ if (
 
 const openai =
   new OpenAI({
-    baseURL: endpoint,
-    apiKey
+    baseURL: endpoint || "https://example.com/openai/v1",
+    apiKey: apiKey || "unconfigured-key"
   });
 
 
@@ -5215,3 +5356,23 @@ app.http(
     }
   }
 );
+module.exports = {
+  CREATE_INSTRUCTIONS,
+  ARROW_ONLY_INSTRUCTIONS,
+  THEME_STYLES,
+  LEGACY_THEME_STYLES,
+  getExcalidrawStyle,
+  resolveVisualStyle,
+  detectVisualStyleFromNativeElement,
+  edgePoint,
+  buildArrowGeometry,
+  rerouteAllArrows,
+  rerouteNativeArrow,
+  renderSingleIRNode,
+  applyOperationsToCanvas,
+  finalizeCreatedScene,
+  parseModelJson,
+  extractOperations,
+  validateOperationIds,
+  filterOperationsAgainstScene
+};
