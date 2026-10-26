@@ -229,10 +229,24 @@ RELATIONSHIP LABELS & CLEARANCE:
 - NEVER place long sentences, bullet points, or paragraphs on a relationship label.
 - Leave at least 140 px horizontal clearance or 100 px vertical clearance between connected nodes when a relationship has a label.
 
+LABEL HYGIENE (critical):
+- NEVER put relationship words (residual, skip, attention, weights, gradients, etc.) inside a node label.
+- Node labels must stay clean and short (2–5 words). Put extra meaning only on the relationship label or in a note.
+- Residual / skip connections must be drawn as separate relationships that bypass the sub-layer and land on the combination node (Add + Norm, etc.).
+- Relationship labels must be extremely short (1–2 words max). Prefer leaving the arrow unlabeled when the meaning is obvious from context.
+
+DENSE / MANY-TO-MANY CONNECTIONS:
+- When a layer has many parallel connections (fully-connected layers, attention heads, weight matrices, etc.):
+  - Do NOT draw every individual connection.
+  - Show a small number of representative arrows (usually 2–4) and add a short note or label such as “all-to-all weighted connections” or “dense connections”.
+  - Prefer grouping or using a single thick conceptual arrow + annotation over visual spaghetti.
+- For neuron-level diagrams, it is acceptable to show only a few example neurons per layer and indicate the pattern rather than every weight.
+
 RESIDUAL / SKIP CONNECTIONS:
 For architectures that contain residual or skip connections (ResNet blocks, Transformer Pre-LN / Post-LN, U-Net skip paths, residual connections in general):
 - Add a relationship that branches from the input of the sub-layer, bypasses the intermediate computation, and connects directly into the subsequent combination / Add & Norm node.
 - Prefer routing that clearly shows the bypass (the application will handle geometry).
+- Never merge the word “residual” or “skip” into the node label itself.
 
 ==================================================
 STEP 5 — LABELS
@@ -245,6 +259,8 @@ Avoid generic labels such as "Input", "Output", "Process", "Component A", "Compo
 Prefer short labels, usually 2–5 words.
 
 Do not put long explanations inside node labels. Use a note or text element when explanation is required.
+
+Never pollute node labels with relationship terms (residual, skip, weights, gradients, attention, etc.).
 
 ==================================================
 STEP 6 — CANVAS IR SEMANTIC KINDS
@@ -329,6 +345,11 @@ LAYOUT GRID HELPERS:
 - Simple horizontal SEQUENCE: nodes start at x ≈ 100 and increment by (node_width + 120).
 - HUB diagrams: place central hub near (500, 400); connected nodes at ~140 px clearance.
 
+LAYOUT PRIORITY FOR COMPLEX GRAPHS:
+- Prefer hierarchical or layered placement over trying to show every edge.
+- When the graph becomes dense, reduce visual complexity first; semantic clarity is more important than drawing every link.
+- Keep residual / skip connections visually distinct.
+
 Advanced collision detection and routing are handled by application code. The model’s job is to supply sensible initial positions and clear semantic relationships.
 
 ==================================================
@@ -388,7 +409,7 @@ Before returning JSON, verify:
 3. No technology or relationship was invented.
 4. The chosen grammar matches the topic.
 5. The main reading direction is obvious.
-6. Labels are specific and readable.
+6. Labels are specific, readable, and free of relationship words (no “residual”, “skip”, etc. inside node labels).
 7. Important elements have appropriate hierarchy.
 8. There are no unnecessary elements.
 9. There are no decorative relationships.
@@ -397,7 +418,8 @@ Before returning JSON, verify:
 12. Notes contain topic-specific information and match the requested depth.
 13. The canvas includes all explicit deliverables requested by the user.
 14. Complexity is appropriate: neither a superficial summary nor unnecessary sprawl.
-15. Residual / skip connections are present when the architecture requires them.
+15. Residual / skip connections are present when the architecture requires them, and they are drawn as true bypass relationships.
+16. Dense many-to-many connections are represented with a few representative arrows + a clarifying note, not with visual spaghetti.
 
 If removing an element would not reduce understanding, remove it. However, do not remove repeated nodes, edges, equations, or intermediate steps when those are essential to the requested technical explanation.
 
