@@ -1373,7 +1373,7 @@ function findOrthogonalPath(startLead, endLead, obstacles) {
   return simplifyOrthogonalPath(path);
 }
 
-const ARROW_BINDING_GAP = 2;
+const ARROW_BINDING_GAP = 6;
 const ARROW_SIDES = new Set(["top", "right", "bottom", "left"]);
 function safeArrowSide(value) { return typeof value === "string" && ARROW_SIDES.has(value) ? value : undefined; }
 function safeArrowAnchor(value) { return typeof value === "number" && Number.isFinite(value) ? Math.max(0.08, Math.min(0.92, value)) : undefined; }
@@ -1405,6 +1405,101 @@ function bindingFocus(block, side, point, anchor) {
     ? (point.y - (block.y + block.height / 2)) / Math.max(1, block.height / 2)
     : (point.x - (block.x + block.width / 2)) / Math.max(1, block.width / 2);
   return Math.max(-0.92, Math.min(0.92, along));
+}
+
+// Current Excalidraw bindings use a normalized fixedPoint and a binding mode.
+// Keep focus/gap too for compatibility with older Excalidraw versions.
+function bindingFixedPoint(block, side, point, anchor) {
+  const width = Math.max(1, Number(block?.width) || 1);
+  const height = Math.max(1, Number(block?.height) || 1);
+  const ratioX = point ? Math.max(0, Math.min(1, (point.x - block.x) / width)) : 0.5;
+  const ratioY = point ? Math.max(0, Math.min(1, (point.y - block.y) / height)) : 0.5;
+  const a = typeof anchor === "number" && Number.isFinite(anchor)
+    ? Math.max(0.08, Math.min(0.92, anchor))
+    : undefined;
+  switch (side) {
+    case "left": return [0, a ?? ratioY];
+    case "right": return [1, a ?? ratioY];
+    case "top": return [a ?? ratioX, 0];
+    case "bottom": return [a ?? ratioX, 1];
+    default: return [ratioX, ratioY];
+  }
+}
+
+function updateArrowGeometryFields(arrow, geometry) {
+  arrow.x = geometry.x;
+  arrow.y = geometry.y;
+  arrow.points = geometry.points;
+  const xs = geometry.points.map((point) => point[0]);
+  const ys = geometry.points.map((point) => point[1]);
+  arrow.width = Math.max(...xs) - Math.min(...xs);
+  arrow.height = Math.max(...ys) - Math.min(...ys);
+  arrow.angle = 0;
+  // This router emits ordinary multi-point arrows, not Excalidraw's special
+  // elbow-arrow representation. The latter requires fixedSegments semantics.
+  arrow.elbowed = false;
+}
+
+function stableNumericId(id, salt = "seed") {
+  const input = `${salt}:${id}`;
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) || 1;
+}
+
+// The generator runs server-side and often does not receive elements that have
+// passed through Excalidraw's restoreElements(). Fill the native fields that
+// binding/movement code relies on instead of returning partial pseudo-elements.
+function normalizeNativeElementForExcalidraw(element) {
+  if (!element || typeof element !== "object" || typeof element.id !== "string") return element;
+  const out = { ...element };
+  out.angle = Number.isFinite(out.angle) ? out.angle : 0;
+  out.strokeColor = typeof out.strokeColor === "string" ? out.strokeColor : "#1e1e1e";
+  out.backgroundColor = typeof out.backgroundColor === "string" ? out.backgroundColor : "transparent";
+  out.fillStyle = typeof out.fillStyle === "string" ? out.fillStyle : "solid";
+  out.strokeWidth = Number.isFinite(out.strokeWidth) ? out.strokeWidth : 1;
+  out.strokeStyle = typeof out.strokeStyle === "string" ? out.strokeStyle : "solid";
+  out.roundness = Object.prototype.hasOwnProperty.call(out, "roundness") ? out.roundness : null;
+  out.roughness = Number.isFinite(out.roughness) ? out.roughness : 0;
+  out.opacity = Number.isFinite(out.opacity) ? out.opacity : 100;
+  out.seed = Number.isInteger(out.seed) ? out.seed : stableNumericId(out.id, "seed");
+  out.version = Number.isInteger(out.version) && out.version > 0 ? out.version : 1;
+  out.versionNonce = Number.isInteger(out.versionNonce) ? out.versionNonce : stableNumericId(out.id, "nonce");
+  out.index = Object.prototype.hasOwnProperty.call(out, "index") ? out.index : null;
+  out.isDeleted = typeof out.isDeleted === "boolean" ? out.isDeleted : false;
+  out.groupIds = Array.isArray(out.groupIds) ? out.groupIds : [];
+  out.frameId = typeof out.frameId === "string" ? out.frameId : null;
+  out.boundElements = Array.isArray(out.boundElements) && out.boundElements.length ? out.boundElements : null;
+  out.updated = Number.isFinite(out.updated) ? out.updated : Date.now();
+  out.link = typeof out.link === "string" ? out.link : null;
+  out.locked = typeof out.locked === "boolean" ? out.locked : false;
+
+  if (out.type === "arrow") {
+    if (!Array.isArray(out.points) || out.points.length < 2) out.points = [[0, 0], [10, 0]];
+    const xs = out.points.map((point) => Number(point?.[0]) || 0);
+    const ys = out.points.map((point) => Number(point?.[1]) || 0);
+    out.width = Math.max(...xs) - Math.min(...xs);
+    out.height = Math.max(...ys) - Math.min(...ys);
+    out.startBinding = out.startBinding ?? null;
+    out.endBinding = out.endBinding ?? null;
+    out.startArrowhead = Object.prototype.hasOwnProperty.call(out, "startArrowhead") ? out.startArrowhead : null;
+    out.endArrowhead = Object.prototype.hasOwnProperty.call(out, "endArrowhead") ? out.endArrowhead : "arrow";
+    out.elbowed = out.elbowed === true;
+  } else {
+    if (!Number.isFinite(out.width)) {
+      const text = typeof out.text === "string" ? out.text : out.label?.text || "";
+      const fs = Number.isFinite(out.fontSize) ? out.fontSize : 18;
+      out.width = Math.max(1, Math.ceil(Math.max(1, ...text.split("\n").map((line) => line.length)) * fs * 0.6));
+    }
+    if (!Number.isFinite(out.height)) {
+      const text = typeof out.text === "string" ? out.text : out.label?.text || "";
+      out.height = Math.max(1, (text.split("\n").length || 1) * (Number.isFinite(out.fontSize) ? out.fontSize : 18) * 1.25);
+    }
+  }
+  return out;
 }
 
 function buildArrowGeometry(
@@ -1482,8 +1577,21 @@ function syncExcalidrawArrowBindings(nativeMap) {
     const startSide = safeArrowSide(arrow.fromSide) || getFacingEdge(start, end);
     const endSide = safeArrowSide(arrow.toSide) || getFacingEdge(end, start);
     const startPoint = endpointAbsolute(arrow, "start"), endPoint = endpointAbsolute(arrow, "end");
-    arrow.startBinding = { elementId: startId, focus: bindingFocus(start, startSide, startPoint, safeArrowAnchor(arrow.fromAnchor)), gap: ARROW_BINDING_GAP };
-    arrow.endBinding = { elementId: endId, focus: bindingFocus(end, endSide, endPoint, safeArrowAnchor(arrow.toAnchor)), gap: ARROW_BINDING_GAP };
+    arrow.startBinding = {
+      elementId: startId,
+      fixedPoint: bindingFixedPoint(start, startSide, startPoint, safeArrowAnchor(arrow.fromAnchor)),
+      mode: "orbit",
+      // Compatibility with older Excalidraw binding contracts.
+      focus: bindingFocus(start, startSide, startPoint, safeArrowAnchor(arrow.fromAnchor)),
+      gap: ARROW_BINDING_GAP
+    };
+    arrow.endBinding = {
+      elementId: endId,
+      fixedPoint: bindingFixedPoint(end, endSide, endPoint, safeArrowAnchor(arrow.toAnchor)),
+      mode: "orbit",
+      focus: bindingFocus(end, endSide, endPoint, safeArrowAnchor(arrow.toAnchor)),
+      gap: ARROW_BINDING_GAP
+    };
     for (const targetId of [startId, endId]) {
       if (!refsByTarget.has(targetId)) refsByTarget.set(targetId, []);
       refsByTarget.get(targetId).push({ id: arrowId, type: "arrow" });
@@ -1548,12 +1656,13 @@ function rerouteAllArrows(nativeMap) {
       { fromSide: startEdge, toSide: endEdge, fromAnchor: native.fromAnchor, toAnchor: native.toAnchor, route: native.route }
     );
 
-    native.x = geometry.x;
-    native.y = geometry.y;
-    native.points = geometry.points;
+    updateArrowGeometryFields(native, geometry);
     native.endArrowhead = "arrow";
+    native.startArrowhead = native.startArrowhead ?? null;
     native.strokeWidth = 2;
     native.roughness = 0;
+    native.strokeStyle = native.strokeStyle || "solid";
+    native.roundness = native.roundness ?? null;
     if (!native.strokeColor || native.strokeColor === "#1e1e1e") {
       native.strokeColor = "#495057";
     }
@@ -2133,9 +2242,7 @@ function rerouteNativeArrow(
     { fromSide: arrow.fromSide, toSide: arrow.toSide, fromAnchor: arrow.fromAnchor, toAnchor: arrow.toAnchor, route: arrow.route }
   );
 
-  arrow.x = geometry.x;
-  arrow.y = geometry.y;
-  arrow.points = geometry.points;
+  updateArrowGeometryFields(arrow, geometry);
 
   return true;
 }
@@ -2521,17 +2628,30 @@ function renderSingleIRNode(element) {
         [10, 10]
       ],
 
+      width: 10,
+      height: 10,
+      angle: 0,
+      elbowed: false,
+      boundElements: null,
       startBinding: {
-        elementId: cleanId(element.from), focus: 0, gap: ARROW_BINDING_GAP
+        elementId: cleanId(element.from), fixedPoint: [0.5, 0.5], mode: "orbit",
+        focus: 0, gap: ARROW_BINDING_GAP
       },
 
       endBinding: {
-        elementId: cleanId(element.to), focus: 0, gap: ARROW_BINDING_GAP
+        elementId: cleanId(element.to), fixedPoint: [0.5, 0.5], mode: "orbit",
+        focus: 0, gap: ARROW_BINDING_GAP
       },
 
       strokeColor: "#495057",
+      backgroundColor: "transparent",
+      fillStyle: "solid",
       strokeWidth: 2,
+      strokeStyle: "solid",
+      roundness: null,
       roughness: 0,
+      opacity: 100,
+      startArrowhead: null,
       endArrowhead: "arrow"
     };
 
@@ -3041,9 +3161,7 @@ function applyOperationsToCanvas(
     ) {
       nativeMap.set(
         element.id,
-        {
-          ...element
-        }
+        normalizeNativeElementForExcalidraw({ ...element })
       );
     }
   }
@@ -3154,7 +3272,7 @@ function applyOperationsToCanvas(
 
       nativeMap.set(
         element.id,
-        native
+        normalizeNativeElementForExcalidraw(native)
       );
 
       irMap.set(
@@ -5117,7 +5235,7 @@ function filterOperationsAgainstScene(
 
 function finalizeCreatedScene(elements) {
   const nativeElements = Array.isArray(elements)
-    ? elements.map((element) => ({ ...element }))
+    ? elements.map((element) => normalizeNativeElementForExcalidraw({ ...element }))
     : [];
   const nativeMap = new Map(
     nativeElements
@@ -5694,5 +5812,7 @@ module.exports = {
   validateOperationIds,
   filterOperationsAgainstScene,
   syncExcalidrawArrowBindings,
-  edgePointOnSide
+  edgePointOnSide,
+  bindingFixedPoint,
+  normalizeNativeElementForExcalidraw
 };
