@@ -1,185 +1,141 @@
 "use strict";
 
-/*
- * Deterministic UI wireframes for the Excalidraw IR.
- * The model supplies semantic slots; this module owns all geometry.
- * Values shown without model-provided content are intentionally placeholders.
- */
+// Generic UI composition. The model supplies semantic regions and component
+// slots; this module owns deterministic sizing and positions. It is deliberately
+// not a catalogue of page-specific layouts.
+const { snap, slug, clamp } = require("./layout-patterns");
 
-const { clamp, snap, slug } = require("./layout-patterns");
-
-const clean = (value, fallback = "", maxLength = 140) => {
-  if (typeof value !== "string") return fallback;
-  const s = value.replace(/\r\n?/g, "\n")
-    .replace(/[\x00-\x09\x0B-\x1F\x7F]/g, " ")
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+/g, " ").trim())
-    .join("\n")
-    .trim();
-  return s ? s.slice(0, maxLength) : fallback;
+const COMPONENTS = {
+  heading: { w: 320, h: 56, visual: "primary", role: "primary" },
+  text: { w: 280, h: 64, visual: "default", role: "supporting" },
+  button: { w: 152, h: 44, visual: "primary", role: "supporting" },
+  input: { w: 280, h: 64, visual: "default", role: "supporting" },
+  select: { w: 280, h: 64, visual: "default", role: "supporting" },
+  toggle: { w: 236, h: 48, visual: "default", role: "supporting" },
+  badge: { w: 124, h: 36, visual: "secondary", role: "supporting" },
+  card: { w: 288, h: 156, visual: "default", role: "secondary" },
+  metric: { w: 224, h: 112, visual: "default", role: "primary" },
+  chart: { w: 456, h: 232, visual: "default", role: "secondary" },
+  table: { w: 560, h: 244, visual: "default", role: "secondary" },
+  list: { w: 304, h: 192, visual: "default", role: "secondary" },
+  navigation: { w: 216, h: 280, visual: "default", role: "secondary" },
+  tabs: { w: 384, h: 48, visual: "secondary", role: "supporting" },
+  avatar: { w: 80, h: 80, visual: "secondary", role: "supporting", shape: "ellipse" },
+  image: { w: 256, h: 168, visual: "default", role: "secondary" },
+  code: { w: 456, h: 192, visual: "default", role: "secondary" },
+  divider: { w: 320, h: 12, visual: "default", role: "supporting" },
+  "empty-state": { w: 320, h: 152, visual: "secondary", role: "secondary" }
 };
-const list = (value, max = 8) => Array.isArray(value) ? value.slice(0, max) : [];
-const slugId = (value) => slug(value).slice(0, 54) || "item";
 
-function wireframeToOperations(rawSpec, T = {}) {
-  const spec = rawSpec && typeof rawSpec === "object" ? rawSpec : {};
-  const screenType = ["dashboard", "login", "settings", "form", "kanban", "data-table", "chat", "generic"]
-    .includes(String(spec.screenType || "generic").toLowerCase())
-    ? String(spec.screenType || "generic").toLowerCase() : "generic";
-  const ops = [];
-  const ids = new Set();
-  const add = (element) => {
-    if (!element || !element.id || ids.has(element.id) || ops.length >= 190) return;
-    ids.add(element.id);
-    ops.push({ op: "add", element });
-  };
-  const text = (id, value, x, y, fontSize = 18) => {
-    const content = clean(value, "", 500);
-    if (!content) return;
-    add({ id, kind: "text", text: content, position: { x: snap(x), y: snap(y) }, style: { fontSize } });
-  };
-  const box = (id, label, x, y, width, height, visual = "default", role = "secondary") => {
-    const content = clean(label, " ", 900);
-    add({
-      id, kind: "node", type: "rectangle", label: content,
-      role, position: { x: snap(x), y: snap(y) },
-      size: { width: snap(width), height: snap(height) },
-      style: { visual }
-    });
-  };
-  const safeArray = (values, max = 8, fallback = []) => {
-    const source = list(values, max).map((v) => typeof v === "string" ? clean(v) : v).filter(Boolean);
-    return source.length ? source : fallback;
-  };
-  const title = clean(spec.title, "Application Wireframe");
-  const subtitle = clean(spec.subtitle, "Low-fidelity layout generated from reusable UI patterns");
-  text("title", title, 60, 24, 30);
-  text("subtitle", subtitle, 60, 72, 18);
-
-  const nav = safeArray(spec.navigation, 7, ["Overview", "Activity", "Reports", "Settings"]);
-  const metrics = list(spec.metrics, 4);
-  const panels = list(spec.panels, 4);
-  const fields = list(spec.fields, 8);
-  const actions = safeArray(spec.actions, 3, ["Save", "Cancel"]);
-  const columns = safeArray(spec.columns, 6, ["Name", "Status", "Updated"]);
-  const tasks = list(spec.tasks, 12);
-  const messages = list(spec.messages, 8);
-
-  const header = (label = "Workspace") => {
-    box("ui-topbar", label, 60, 124, 1320, 52, "secondary", "primary");
-    box("ui-topbar-search", "Search", 1020, 132, 150, 36, "default", "supporting");
-    box("ui-topbar-profile", "Profile", 1190, 132, 150, 36, "default", "supporting");
-  };
-  const sidebar = (items = nav) => {
-    const label = ["NAVIGATION", ...items.map((item) => `- ${clean(item)}`)].join("\n");
-    box("ui-sidebar", label, 60, 192, 220, 650, "default", "secondary");
-  };
-  const sectionHeading = (label, x = 312, y = 190) => text("ui-section-heading", label, x, y, 24);
-  const appShell = () => { header(); sidebar(); };
-  const mainX = 312, mainW = 1068;
-
-  if (screenType === "login") {
-    // Focused single-card composition: no sidebar or app shell clutter.
-    box("ui-login-card", "", 450, 180, 540, 600, "default", "primary");
-    text("ui-login-heading", clean(spec.title, "Welcome back"), 510, 225, 26);
-    text("ui-login-description", clean(spec.subtitle, "Sign in to continue"), 510, 270, 16);
-    const loginFields = fields.length ? fields : [
-      { label: "Email address", placeholder: "name@example.com", type: "text" },
-      { label: "Password", placeholder: "Enter password", type: "password" }
-    ];
-    loginFields.slice(0, 4).forEach((f, i) => {
-      const label = clean(f?.label, `Field ${i + 1}`);
-      box(`ui-login-field-${i + 1}`, `${label}\n${clean(f?.placeholder, "Enter " + label.toLowerCase())}`, 510, 320 + i * 92, 420, 68, "default", "supporting");
-    });
-    box("ui-login-primary-action", clean(actions[0], "Sign in"), 510, 320 + Math.min(loginFields.length, 4) * 92, 420, 48, "primary", "primary");
-    if (actions[1]) text("ui-login-secondary-action", actions[1], 510, 720, 15);
-  } else if (screenType === "dashboard") {
-    appShell();
-    sectionHeading(clean(spec.title, "Overview"));
-    const defaults = [
-      { label: "Active users", value: "Value", trend: "Trend" },
-      { label: "New signups", value: "Value", trend: "Trend" },
-      { label: "Conversion", value: "Value", trend: "Trend" },
-      { label: "Revenue", value: "Value", trend: "Trend" }
-    ];
-    (metrics.length ? metrics : defaults).slice(0, 4).forEach((m, i) => {
-      const x = mainX + i * 267;
-      const label = clean(m?.label, `Metric ${i + 1}`);
-      const value = clean(m?.value, "Value");
-      const trend = clean(m?.trend, "Trend unavailable");
-      box(`ui-metric-${i + 1}`, `${label}\n${value}\n${trend}`, x, 232, 246, 112, "default", "primary");
-    });
-    const p1 = panels[0] || { title: "Trend analysis", type: "chart", items: ["Chart placeholder"] };
-    const p2 = panels[1] || { title: "Recent activity", type: "list", items: ["Activity item", "Activity item", "Activity item"] };
-    const panelText = (p) => [clean(p?.title, "Panel"), ...(list(p?.items, 4).map((v) => `- ${clean(v)}`))].join("\n");
-    box("ui-dashboard-panel-1", `${panelText(p1)}\n[${clean(p1?.type, "chart")} area]`, mainX, 368, 680, 230, "default", "secondary");
-    box("ui-dashboard-panel-2", panelText(p2), 1012, 368, 368, 230, "default", "secondary");
-    const tableTitle = clean(panels[2]?.title, "Recent records");
-    box("ui-dashboard-table", `${tableTitle}\n${columns.join("     ")}\nRow data placeholder\nRow data placeholder\nRow data placeholder`, mainX, 622, mainW, 220, "default", "secondary");
-  } else if (screenType === "kanban") {
-    appShell();
-    sectionHeading(clean(spec.title, "Project Board"));
-    const laneNames = safeArray(spec.columns, 4, ["To do", "In progress", "Done"]);
-    const laneGap = 18, laneW = (mainW - laneGap * (laneNames.length - 1)) / laneNames.length;
-    laneNames.forEach((lane, i) => {
-      const x = mainX + i * (laneW + laneGap);
-      const laneTasks = tasks.filter((t) => clean(t?.status).toLowerCase() === lane.toLowerCase());
-      const shown = laneTasks.length ? laneTasks : (tasks.length ? [] : [{ title: "Task placeholder" }]);
-      const contents = [lane, ...shown.slice(0, 5).map((t) => `- ${clean(t?.title, "Task")}`)].join("\n\n");
-      box(`ui-kanban-lane-${i + 1}`, contents, x, 236, laneW, 590, "default", "secondary");
-    });
-  } else if (screenType === "settings" || screenType === "form") {
-    appShell();
-    sectionHeading(clean(spec.title, screenType === "settings" ? "Settings" : "Details"));
-    const sectionTitle = clean(panels[0]?.title, screenType === "settings" ? "Preferences" : "Information");
-    const body = fields.length ? fields : [
-      { label: "Name", placeholder: "Enter name" },
-      { label: "Email address", placeholder: "Enter email" },
-      { label: "Description", placeholder: "Add a description" }
-    ];
-    box("ui-form-section", sectionTitle, mainX, 232, mainW, 72, "default", "primary");
-    body.slice(0, 7).forEach((field, i) => {
-      const y = 322 + i * 64;
-      const label = clean(field?.label, `Field ${i + 1}`);
-      box(`ui-form-field-${i + 1}`, `${label}\n${clean(field?.placeholder, "Enter " + label.toLowerCase())}`, mainX, y, mainW, 52, "default", "supporting");
-    });
-    const bottomY = 322 + Math.min(body.length, 7) * 64;
-    actions.slice(0, 3).forEach((action, i) => box(`ui-form-action-${i + 1}`, action, mainX + mainW - (i + 1) * 150, bottomY, 132, 42, i === 0 ? "primary" : "default", "supporting"));
-  } else if (screenType === "data-table") {
-    appShell();
-    sectionHeading(clean(spec.title, "Records"));
-    box("ui-table-search", "Search records", mainX, 232, 320, 44, "default", "supporting");
-    box("ui-table-filter", "Filters", 650, 232, 140, 44, "default", "supporting");
-    box("ui-table-primary-action", clean(actions[0], "Add record"), 1190, 232, 190, 44, "primary", "supporting");
-    const panelTitle = clean(panels[0]?.title, "All records");
-    const rows = list(panels[0]?.items, 7).map((item) => `- ${clean(item)}`);
-    box("ui-data-table", [panelTitle, columns.join("     "), ... (rows.length ? rows : ["Row placeholder", "Row placeholder", "Row placeholder", "Row placeholder"])].join("\n\n"), mainX, 300, mainW, 530, "default", "secondary");
-  } else if (screenType === "chat") {
-    header();
-    box("ui-chat-conversations", ["CONVERSATIONS", ...nav.map((item) => `- ${clean(item)}`)].join("\n"), 60, 192, 280, 650, "default", "secondary");
-    text("ui-chat-heading", clean(spec.title, "Assistant"), 380, 204, 24);
-    const chatMessages = messages.length ? messages : [
-      { sender: "Assistant", text: "Start a conversation" },
-      { sender: "You", text: "Type a message below" }
-    ];
-    chatMessages.slice(0, 8).forEach((m, i) => {
-      const y = 260 + i * 62;
-      const sender = clean(m?.sender, i % 2 ? "You" : "Assistant");
-      box(`ui-chat-message-${i + 1}`, `${sender}: ${clean(m?.text, "Message text")}`, sender.toLowerCase() === "you" ? 760 : 380, y, 560, 48, sender.toLowerCase() === "you" ? "secondary" : "default", "supporting");
-    });
-    box("ui-chat-composer", "Write a message...", 380, 780, 920, 54, "default", "supporting");
-    box("ui-chat-send", clean(actions[0], "Send"), 1310, 780, 70, 54, "primary", "supporting");
-  } else {
-    appShell();
-    sectionHeading(clean(spec.title, "Application"));
-    const comps = panels.length ? panels : [{ title: "Main content", type: "panel", items: ["Content placeholder"] }];
-    comps.slice(0, 4).forEach((panel, i) => {
-      const col = i % 2, row = Math.floor(i / 2);
-      box(`ui-generic-panel-${i + 1}`, [clean(panel?.title, `Panel ${i + 1}`), ...list(panel?.items, 4).map((item) => `- ${clean(item)}`)].join("\n"), mainX + col * 544, 232 + row * 270, 524, 240, "default", "secondary");
-    });
-  }
-
-  return { version: 2, operations: ops.slice(0, 200) };
+function clean(value, fallback = "", max = 500) {
+  if (typeof value !== "string") return fallback;
+  const out = value.replace(/\r\n?/g, "\n")
+    .replace(/[\x00-\x09\x0B-\x1F\x7F]/g, " ")
+    .split("\n").map((line) => line.replace(/[ \t]+/g, " ").trim()).join("\n").trim();
+  return out ? out.slice(0, max) : fallback;
 }
 
-module.exports = { wireframeToOperations };
+function componentSize(component) {
+  const type = String(component.type || "card").toLowerCase();
+  const preset = COMPONENTS[type] || COMPONENTS.card;
+  const label = clean(component.label, type.replace(/-/g, " "), 180);
+  const detail = clean(component.detail, "", 320);
+  const text = [label, detail].filter(Boolean).join("\n");
+  const longest = Math.max(1, ...text.split("\n").map((line) => line.length));
+  const width = snap(clamp(Math.max(preset.w, longest * 9 + 40), 120, 720));
+  const lines = text.split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(line.length / Math.max(18, (width - 36) / 9))), 0);
+  const height = snap(clamp(Math.max(preset.h, lines * 24 + 28), 40, 360));
+  return { ...preset, type, id: slug(component.id), label: text, w: width, h: height };
+}
+
+function wireframeToOperations(rawSpec, tokens = {}) {
+  const spec = rawSpec && typeof rawSpec === "object" ? rawSpec : {};
+  const usedIds = new Set();
+  const operations = [];
+  const add = (element) => {
+    if (!element?.id || usedIds.has(element.id) || operations.length >= 190) return;
+    usedIds.add(element.id);
+    operations.push({ op: "add", element });
+  };
+  const addText = (id, value, x, y, fontSize = 18) => {
+    const text = clean(value, "", 500);
+    if (text) add({ id, kind: "text", text, position: { x: snap(x), y: snap(y) }, style: { fontSize } });
+  };
+
+  const regions = (Array.isArray(spec.regions) ? spec.regions : []).slice(0, 12).map((region, index) => ({
+    id: slug(region.id || `region-${index + 1}`),
+    label: clean(region.label, "", 100),
+    row: Number.isInteger(region.row) && region.row >= 0 ? region.row : Math.floor(index / 2),
+    col: Number.isInteger(region.col) && region.col >= 0 ? region.col : index % 2,
+    layout: ["row", "column", "grid"].includes(region.layout) ? region.layout : "grid",
+    columns: clamp(Number.isInteger(region.columns) ? region.columns : 2, 1, 6),
+    components: (Array.isArray(region.components) ? region.components : []).slice(0, 40).map(componentSize)
+  })).filter((region) => region.components.length);
+
+  // Backwards compatibility for the previous fixed-screen request shape.
+  if (!regions.length) {
+    const fallbackTitle = clean(spec.title, "Application Wireframe");
+    const items = [];
+    const screenType = String(spec.screenType || "generic").toLowerCase();
+    if (screenType === "dashboard") {
+      for (const metric of (Array.isArray(spec.metrics) ? spec.metrics : []).slice(0, 4)) {
+        items.push({ id: `metric-${items.length + 1}`, type: "metric", label: clean(metric.label, "Metric"), detail: [metric.value, metric.trend].filter(Boolean).join(" · ") });
+      }
+      for (const panel of (Array.isArray(spec.panels) ? spec.panels : []).slice(0, 4)) items.push({ id: `panel-${items.length + 1}`, type: panel.type === "chart" ? "chart" : "card", label: clean(panel.title, "Panel"), detail: (panel.items || []).map((x) => clean(x)).join("\n") });
+    } else if (screenType === "form" || screenType === "settings" || screenType === "login") {
+      for (const field of (Array.isArray(spec.fields) ? spec.fields : []).slice(0, 8)) items.push({ id: `field-${items.length + 1}`, type: "input", label: clean(field.label, "Field"), detail: clean(field.placeholder, "") });
+      for (const action of (Array.isArray(spec.actions) ? spec.actions : ["Save", "Cancel"]).slice(0, 3)) items.push({ id: `action-${items.length + 1}`, type: "button", label: clean(action, "Action") });
+    }
+    if (!items.length) items.push({ id: "main-content", type: "card", label: fallbackTitle, detail: clean(spec.subtitle, "Main content area") });
+    regions.push({ id: "main", label: "", row: 0, col: 0, layout: "grid", columns: screenType === "dashboard" ? 2 : 1, components: items.map(componentSize) });
+  }
+
+  // Lay out each region locally, then lay regions out on a responsive grid.
+  const localLayouts = [];
+  for (const region of regions) {
+    const cells = region.components.map((component, index) => {
+      const row = region.layout === "row" ? 0 : region.layout === "column" ? index : Math.floor(index / region.columns);
+      const col = region.layout === "row" ? index : region.layout === "column" ? 0 : index % region.columns;
+      return { id: component.id, row, col, w: component.w, h: component.h };
+    });
+    const rows = Math.max(...cells.map((cell) => cell.row)) + 1;
+    const cols = Math.max(...cells.map((cell) => cell.col)) + 1;
+    const rowHeights = Array(rows).fill(0), colWidths = Array(cols).fill(0);
+    for (const cell of cells) { rowHeights[cell.row] = Math.max(rowHeights[cell.row], cell.h); colWidths[cell.col] = Math.max(colWidths[cell.col], cell.w); }
+    const ys = [], xs = [];
+    rowHeights.reduce((cursor, h, i) => (ys[i] = cursor, cursor + h + 24), 0);
+    colWidths.reduce((cursor, w, i) => (xs[i] = cursor, cursor + w + 24), 0);
+    const positions = new Map();
+    for (const cell of cells) positions.set(cell.id, { x: xs[cell.col] + (colWidths[cell.col] - cell.w) / 2, y: ys[cell.row] + (rowHeights[cell.row] - cell.h) / 2, w: cell.w, h: cell.h });
+    localLayouts.push({ region, positions, w: Math.max(...[...positions.values()].map((b) => b.x + b.w)), h: Math.max(...[...positions.values()].map((b) => b.y + b.h)) });
+  }
+
+  const rowCount = Math.max(...localLayouts.map((item) => item.region.row)) + 1;
+  const colCount = Math.max(...localLayouts.map((item) => item.region.col)) + 1;
+  const rowHeights = Array(rowCount).fill(0), colWidths = Array(colCount).fill(0);
+  for (const item of localLayouts) { rowHeights[item.region.row] = Math.max(rowHeights[item.region.row], item.h + 64); colWidths[item.region.col] = Math.max(colWidths[item.region.col], item.w + 64); }
+  const ys = [], xs = [];
+  rowHeights.reduce((cursor, h, i) => (ys[i] = cursor, cursor + h + 64), 0);
+  colWidths.reduce((cursor, w, i) => (xs[i] = cursor, cursor + w + 64), 0);
+  addText("title", clean(spec.title, "Application Wireframe"), 64, 24, 30);
+  addText("subtitle", clean(spec.subtitle, "Composed from reusable UI primitives"), 64, 72, 18);
+
+  for (const item of localLayouts) {
+    const region = item.region;
+    const x0 = 64 + xs[region.col] + 32, y0 = 152 + ys[region.row] + 32;
+    const groupId = `ui-region-${region.id}`;
+    if (region.label) addText(`${groupId}-label`, region.label, x0, y0 - 28, 18);
+    const childIds = [];
+    for (const component of region.components) {
+      const pos = item.positions.get(component.id);
+      const id = `ui-component-${component.id}`;
+      const nativeId = usedIds.has(id) ? `${id}-${operations.length}` : id;
+      add({ id: nativeId, kind: "node", type: component.shape || "rectangle", label: component.label, role: component.role, position: { x: snap(x0 + pos.x), y: snap(y0 + pos.y) }, size: { width: pos.w, height: pos.h }, style: { visual: component.visual } });
+      childIds.push(nativeId);
+    }
+    if (childIds.length) add({ id: groupId, kind: "group", label: region.label, children: childIds, style: { visual: "group" } });
+  }
+  return { version: 2, operations };
+}
+
+module.exports = { wireframeToOperations, COMPONENTS };

@@ -79,23 +79,25 @@ function sizeNode(n) {
   return { w: snap(w), h: snap(h) };
 }
 
+function sizeNetworkNode(n) {
+  if (n.size && Number.isFinite(n.size.width) && Number.isFinite(n.size.height)) {
+    return { w: snap(clamp(n.size.width, 88, 168)), h: snap(clamp(n.size.height, 88, 128)) };
+  }
+  const lines = wrapLabel(n.label, 116, T.font);
+  const longest = Math.max(1, ...lines.map((line) => line.length));
+  const w = snap(clamp(longest * T.font * T.charW + 36, 96, 160));
+  const h = snap(clamp(Math.max(88, lines.length * T.font * 1.3 + 28), 88, 120));
+  return { w, h };
+}
+
 // ------------------------------------------------------------------
 // 3. GENERIC LAYOUT PRIMITIVES
 // ------------------------------------------------------------------
 
 /* cells: [{id,w,h,row,col}] -> Map(id -> {x,y,w,h}) */
 function gridLayout(cells, { gapX, gapY, centerRows = false, centerCols = false }) {
-  // LLM-produced specifications can be incomplete. Never let an empty or
-  // malformed grid turn into Array(-Infinity) / RangeError.
-  cells = (Array.isArray(cells) ? cells : []).filter((c) =>
-    c && typeof c.id === "string" &&
-    Number.isInteger(c.row) && c.row >= 0 &&
-    Number.isInteger(c.col) && c.col >= 0 &&
-    Number.isFinite(c.w) && c.w > 0 &&
-    Number.isFinite(c.h) && c.h > 0
-  );
+  cells = (Array.isArray(cells) ? cells : []).filter((c) => c && typeof c.id === "string" && Number.isInteger(c.row) && c.row >= 0 && Number.isInteger(c.col) && c.col >= 0 && Number.isFinite(c.w) && c.w > 0 && Number.isFinite(c.h) && c.h > 0);
   if (!cells.length) return new Map();
-
   const rows = Math.max(...cells.map((c) => c.row)) + 1;
   const cols = Math.max(...cells.map((c) => c.col)) + 1;
   const rowH = Array(rows).fill(0), colW = Array(cols).fill(0);
@@ -268,6 +270,62 @@ PATTERNS["layers-net"] = {
   }
 };
 
+// Generic hybrid/multi-region grammar. Regions are semantic partitions, not topics.
+PATTERNS.composite = {
+  when: "Hybrid diagrams made of multiple parallel regions, lanes, or subgraphs with meaningful cross-region edges.",
+  schema: `regions = [{id,label,row,col,direction,nodes:[node ids]}]. row/col are non-negative relative grid coordinates; direction is LR or TB. Every node belongs to exactly one region. Use arbitrary region names for any domain. Use cross-region edges whenever semantically accurate.`,
+  layout(spec, nodes, sizes, edges) {
+    const regions = (spec.regions || []).map((region, i) => ({
+      ...region, id: slug(region.id),
+      row: Number.isInteger(region.row) && region.row >= 0 ? region.row : 0,
+      col: Number.isInteger(region.col) && region.col >= 0 ? region.col : i,
+      direction: region.direction === "TB" ? "TB" : "LR",
+      nodes: (region.nodes || []).map(slug).filter((id) => sizes.has(id))
+    }));
+    const boxes = new Map(), groups = [], prepared = [];
+    for (const region of regions) {
+      const members = region.nodes.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
+      if (!members.length) continue;
+      const ids = members.map((n) => n.id), memberSet = new Set(ids);
+      const localEdges = edges.filter((e) => memberSet.has(e.from) && memberSet.has(e.to));
+      let localBoxes;
+      if (localEdges.length === 0) {
+        const cells = members.map((n, i) => ({ id: n.id, ...sizes.get(n.id), row: region.direction === "LR" ? 0 : i, col: region.direction === "LR" ? i : 0 }));
+        localBoxes = gridLayout(cells, { gapX: 88, gapY: 72, centerRows: region.direction === "LR", centerCols: region.direction === "TB" });
+      } else {
+        const { rank, back } = rankGraph(ids, localEdges);
+        const layers = orderRanks(ids, rank, localEdges, back);
+        const cells = [];
+        layers.forEach((layer, r) => layer.forEach((id, i) => {
+          cells.push(region.direction === "LR" ? { id, ...sizes.get(id), col: r, row: i } : { id, ...sizes.get(id), row: r, col: i });
+        }));
+        localBoxes = gridLayout(cells, { gapX: region.direction === "LR" ? 144 : 96, gapY: region.direction === "LR" ? 96 : 128, centerCols: region.direction === "LR", centerRows: region.direction === "TB" });
+      }
+      const list = [...localBoxes.values()];
+      if (!list.length) continue;
+      const w = Math.max(...list.map((b) => b.x + b.w));
+      const h = Math.max(...list.map((b) => b.y + b.h));
+      prepared.push({ region, localBoxes, w, h, cellW: w + T.groupPad * 2, cellH: h + T.groupPad * 2 });
+    }
+    if (!prepared.length) return { boxes, groups };
+    const rows = Math.max(...prepared.map((r) => r.region.row)) + 1;
+    const cols = Math.max(...prepared.map((r) => r.region.col)) + 1;
+    const rowH = Array(rows).fill(0), colW = Array(cols).fill(0);
+    prepared.forEach((item) => { rowH[item.region.row] = Math.max(rowH[item.region.row], item.cellH); colW[item.region.col] = Math.max(colW[item.region.col], item.cellW); });
+    const rowY = [], colX = [];
+    rowH.reduce((y, h, i) => (rowY[i] = y, y + h + 176), 0);
+    colW.reduce((x, w, i) => (colX[i] = x, x + w + 176), 0);
+    for (const item of prepared) {
+      const r = item.region;
+      const offsetX = colX[r.col] + (colW[r.col] - item.cellW) / 2 + T.groupPad;
+      const offsetY = rowY[r.row] + (rowH[r.row] - item.cellH) / 2 + T.groupPad;
+      for (const [id, b] of item.localBoxes) boxes.set(id, { x: offsetX + b.x, y: offsetY + b.y, w: b.w, h: b.h });
+      groups.push({ id: r.id, label: typeof r.label === "string" ? r.label.slice(0, 100) : "", nodes: r.nodes.filter((id) => boxes.has(id)) });
+    }
+    return { boxes, groups };
+  }
+};
+
 PATTERNS.tree = {
   when: "Hierarchies: taxonomy, org chart, syntax tree, decomposition. edges = parent -> child.",
   schema: `nodes + edges (parent->child). direction TB (default) | LR.`,
@@ -387,132 +445,139 @@ function assignAnchors(edges, boxes) {
 // ------------------------------------------------------------------
 // 6. SPEC -> IR v2 OPERATIONS
 // ------------------------------------------------------------------
-function validatePatternSpec(rawSpec) {
-  if (!rawSpec || typeof rawSpec !== "object" || Array.isArray(rawSpec)) return false;
-  const pattern = rawSpec.pattern;
-  if (pattern === "wireframe") {
-    const supportedScreens = new Set(["dashboard", "login", "settings", "form", "kanban", "data-table", "chat", "generic"]);
-    return supportedScreens.has(String(rawSpec.screenType || "generic").toLowerCase());
+function validatePatternSpec(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  if (raw.pattern === "freeform") return true;
+  if (raw.pattern === "wireframe") {
+    const regions = raw.regions;
+    if (Array.isArray(regions) && regions.length) {
+      if (regions.length > 12) return false;
+      const regionIds = new Set(), componentIds = new Set();
+      let count = 0;
+      for (const region of regions) {
+        if (!region || typeof region.id !== "string" || !region.id.trim()) return false;
+        const rid = slug(region.id);
+        if (regionIds.has(rid)) return false;
+        regionIds.add(rid);
+        if (region.row !== undefined && (!Number.isInteger(region.row) || region.row < 0 || region.row > 7)) return false;
+        if (region.col !== undefined && (!Number.isInteger(region.col) || region.col < 0 || region.col > 7)) return false;
+        if (region.layout !== undefined && !["row", "column", "grid"].includes(region.layout)) return false;
+        if (!Array.isArray(region.components) || !region.components.length) return false;
+        for (const component of region.components) {
+          if (!component || typeof component.id !== "string" || !component.id.trim() || typeof component.label !== "string" || !component.label.trim()) return false;
+          const cid = slug(component.id);
+          if (componentIds.has(cid)) return false;
+          componentIds.add(cid);
+          if (++count > 120) return false;
+        }
+      }
+      return true;
+    }
+    return ["dashboard", "login", "settings", "form", "kanban", "data-table", "chat", "generic"].includes(String(raw.screenType || "generic").toLowerCase());
   }
-  if (!PATTERNS[pattern]) return false;
-
-  const rawNodes = Array.isArray(rawSpec.nodes) ? rawSpec.nodes : [];
+  if (!PATTERNS[raw.pattern]) return false;
+  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
   if (!rawNodes.length || rawNodes.length > 100) return false;
-  const nodeIds = new Set();
+  const ids = new Set();
   for (const node of rawNodes) {
     if (!node || typeof node.id !== "string" || !node.id.trim() || typeof node.label !== "string" || !node.label.trim()) return false;
     const id = slug(node.id);
-    if (nodeIds.has(id)) return false; // detect collisions after slug normalization
-    nodeIds.add(id);
+    if (ids.has(id)) return false;
+    ids.add(id);
   }
-
-  const rawGroups = Array.isArray(rawSpec.groups) ? rawSpec.groups : [];
+  const groups = Array.isArray(raw.groups) ? raw.groups : [];
   const groupIds = new Set();
-  for (const group of rawGroups) {
+  for (const group of groups) {
     if (!group || typeof group.id !== "string" || !group.id.trim()) return false;
     const id = slug(group.id);
-    if (groupIds.has(id) || nodeIds.has(id)) return false;
+    if (groupIds.has(id) || ids.has(id)) return false;
     groupIds.add(id);
   }
-
-  if (["tiers", "swimlane", "comparison", "layers-net"].includes(pattern)) {
-    if (!rawGroups.length) return false;
-    if (pattern === "comparison" && rawGroups.length !== 2) return false;
-    if (pattern === "layers-net" && rawGroups.length < 2) return false;
-    const membership = new Map();
-    for (const group of rawGroups) {
-      const members = Array.isArray(group.nodes) ? group.nodes : [];
-      for (const rawId of members) {
-        const id = slug(rawId);
-        if (!nodeIds.has(id) || membership.has(id)) return false;
-        membership.set(id, group.id);
+  const edges = Array.isArray(raw.edges) ? raw.edges : [];
+  for (const edge of edges) if (!edge || typeof edge.from !== "string" || typeof edge.to !== "string" || !ids.has(slug(edge.from)) || !ids.has(slug(edge.to))) return false;
+  if (["tiers", "swimlane", "comparison", "layers-net"].includes(raw.pattern)) {
+    if (!groups.length || (raw.pattern === "comparison" && groups.length !== 2) || (raw.pattern === "layers-net" && groups.length < 2)) return false;
+    const membership = new Set();
+    for (const group of groups) for (const rawId of (Array.isArray(group.nodes) ? group.nodes : [])) {
+      const id = slug(rawId);
+      if (!ids.has(id) || membership.has(id)) return false;
+      membership.add(id);
+    }
+    if (membership.size !== ids.size) return false;
+  }
+  if (raw.pattern === "composite") {
+    const regions = Array.isArray(raw.regions) ? raw.regions : [];
+    if (regions.length < 2 || regions.length > 12) return false;
+    const regionIds = new Set(), members = new Set();
+    for (const region of regions) {
+      if (!region || typeof region.id !== "string" || !region.id.trim()) return false;
+      const id = slug(region.id);
+      if (regionIds.has(id) || ids.has(id) || groupIds.has(id)) return false;
+      regionIds.add(id);
+      if (!Number.isInteger(region.row) || region.row < 0 || region.row > 7 || !Number.isInteger(region.col) || region.col < 0 || region.col > 7) return false;
+      if (!Array.isArray(region.nodes) || !region.nodes.length) return false;
+      for (const rawId of region.nodes) {
+        const nid = slug(rawId);
+        if (!ids.has(nid) || members.has(nid)) return false;
+        members.add(nid);
       }
     }
-    if (membership.size !== nodeIds.size) return false;
+    if (members.size !== ids.size) return false;
   }
-
-  const rawEdges = Array.isArray(rawSpec.edges) ? rawSpec.edges : [];
-  for (const edge of rawEdges) {
-    if (!edge || typeof edge.from !== "string" || typeof edge.to !== "string") return false;
-    if (!nodeIds.has(slug(edge.from)) || !nodeIds.has(slug(edge.to))) return false;
-  }
-
-  // A tree cannot contain a directed cycle. Reject it instead of allowing
-  // recursive tree placement to overflow the stack.
-  if (pattern === "tree") {
-    const adjacency = new Map([...nodeIds].map((id) => [id, []]));
-    const parentOf = new Set();
-    for (const edge of rawEdges) {
-      const from = slug(edge.from), to = slug(edge.to);
-      if (parentOf.has(to)) return false; // hierarchies must have at most one parent per node
-      parentOf.add(to);
-      adjacency.get(from).push(to);
+  if (raw.pattern === "tree") {
+    const parent = new Set(), adj = new Map([...ids].map((id) => [id, []]));
+    for (const edge of edges) {
+      const a = slug(edge.from), b = slug(edge.to);
+      if (parent.has(b)) return false;
+      parent.add(b); adj.get(a).push(b);
     }
     const state = new Map();
-    const visit = (id) => {
-      if (state.get(id) === 1) return false;
-      if (state.get(id) === 2) return true;
-      state.set(id, 1);
-      for (const child of adjacency.get(id) || []) if (!visit(child)) return false;
-      state.set(id, 2);
-      return true;
-    };
-    for (const id of nodeIds) if (!visit(id)) return false;
+    const visit = (id) => { if (state.get(id) === 1) return false; if (state.get(id) === 2) return true; state.set(id, 1); for (const next of adj.get(id)) if (!visit(next)) return false; state.set(id, 2); return true; };
+    for (const id of ids) if (!visit(id)) return false;
   }
-
-  if (pattern !== "pipeline" && pattern !== "cycle" && rawNodes.length > 1 && rawEdges.length === 0 && !(Array.isArray(rawSpec.dense) && rawSpec.dense.length)) return false;
   return true;
 }
 
 function normalizeSpec(spec) {
-  const nodes = (Array.isArray(spec.nodes) ? spec.nodes : []).map((n) => ({ ...n, id: slug(n.id) }));
+  const nodes = (spec.nodes || []).filter((n) => n && n.id && n.label).map((n) => ({ ...n, id: slug(n.id) }));
   const ids = new Set(nodes.map((n) => n.id));
   const groups = (Array.isArray(spec.groups) ? spec.groups : []).map((g) => ({ ...g, id: slug(g.id), nodes: (Array.isArray(g.nodes) ? g.nodes : []).map(slug).filter((i) => ids.has(i)) }));
+  const regions = (Array.isArray(spec.regions) ? spec.regions : []).map((r, i) => ({ ...r, id: slug(r.id), row: Number.isInteger(r.row) && r.row >= 0 ? r.row : 0, col: Number.isInteger(r.col) && r.col >= 0 ? r.col : i, nodes: (Array.isArray(r.nodes) ? r.nodes : []).map(slug).filter((i) => ids.has(i)) }));
   let edges = (Array.isArray(spec.edges) ? spec.edges : []).map((e) => ({ ...e, from: slug(e.from), to: slug(e.to) })).filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
-  for (const pair of (Array.isArray(spec.dense) ? spec.dense : [])) {        // layers-net auto edges
-    if (!Array.isArray(pair) || pair.length < 2) continue;
+  for (const pair of spec.dense || []) {                                  // layers-net auto edges
     const A = groups.find((g) => g.id === slug(pair[0])), B = groups.find((g) => g.id === slug(pair[1]));
     if (!A || !B) continue;
     const all = A.nodes.flatMap((a) => B.nodes.map((b) => ({ from: a, to: b, kind: "data" })));
     const keep = all.length <= 36 ? all : all.filter((_, i) => i % Math.ceil(all.length / 24) === 0);
     edges = edges.concat(keep);
   }
-  return { ...spec, nodes, groups, edges };
+  return { ...spec, nodes, groups, regions, edges };
 }
 
 function specToOperations(rawSpec) {
   if (!validatePatternSpec(rawSpec)) return null;
+  if (rawSpec.pattern === "freeform") return null;
   if (rawSpec.pattern === "wireframe") {
-    try {
-      return require("./wireframe-kit").wireframeToOperations(rawSpec, T);
-    } catch (error) {
-      return null;
-    }
+    try { return require("./wireframe-kit").wireframeToOperations(rawSpec, T); } catch (_) { return null; }
   }
   const spec = normalizeSpec(rawSpec);
   const engine = PATTERNS[spec.pattern];
   if (!engine || spec.nodes.length === 0) return null;                   // caller falls back to freeform prompt
 
   const sizes = new Map(spec.nodes.map((n) => {
-    const s = sizeNode(spec.pattern === "layers-net" ? { size: { width: 72, height: 72 }, ...n, type: n.type || "ellipse", label: n.label } : n);
+    const s = spec.pattern === "layers-net" ? sizeNetworkNode({ ...n, type: n.type || "ellipse" }) : sizeNode(n);
     return [n.id, s];
   }));
   if (spec.pattern === "layers-net") spec.nodes.forEach((n) => { n.type = n.type || "ellipse"; });
 
-  const dir = spec.pattern === "tiers" ? "TB"
-            : spec.pattern === "tree" ? (spec.direction === "LR" ? "LR" : "TB")
+  const dir = spec.pattern === "tiers" || spec.pattern === "tree" ? (spec.direction === "LR" ? "LR" : "TB")
             : spec.pattern === "cycle" || spec.pattern === "hub" || spec.pattern === "comparison" ? "TB"
             : spec.pattern === "layers-net" || spec.pattern === "swimlane" ? "LR"
             : spec.direction === "TB" ? "TB" : "LR";
 
-  let out;
-  try {
-    out = engine.layout(spec, spec.nodes, sizes, spec.edges);
-  } catch (error) {
-    return null;
-  }
+  const out = engine.layout(spec, spec.nodes, sizes, spec.edges);
   const boxes = out?.boxes;
-  if (!(boxes instanceof Map) || boxes.size !== spec.nodes.length) return null;
+  if (!(boxes instanceof Map) || boxes.size !== spec.nodes.length || [...boxes.values()].some((b) => ![b.x, b.y, b.w, b.h].every(Number.isFinite))) return null;
 
   // normalise to origin
   const xs = [...boxes.values()].map((b) => b.x), ys = [...boxes.values()].map((b) => b.y);
@@ -592,10 +657,9 @@ function specToOperations(rawSpec) {
     if (wide) nx += T.note.w + T.note.gap; else ny += h + T.note.gap;
   });
 
-  // Reject accidental element-id collisions before the main sanitizer silently
-  // drops later additions (e.g. a node named "title" colliding with the title).
+  if (ops.length > 200) return null;
   const operationIds = ops.map((op) => op?.element?.id).filter(Boolean);
-  if (ops.length > 200 || new Set(operationIds).size !== operationIds.length) return null;
+  if (new Set(operationIds).size !== operationIds.length) return null;
   return { version: 2, operations: ops };
 }
 
@@ -605,56 +669,47 @@ function specToOperations(rawSpec) {
 function buildPatternInstructions() {
   const catalogue = Object.entries(PATTERNS).map(([id, p]) => `- ${id}: ${p.when}\n    ${p.schema}`).join("\n");
   return `
-You are the semantic planning layer for an Excalidraw canvas generator. Produce a compact, accurate specification; deterministic application code chooses coordinates, dimensions, and arrow geometry. Never output x/y coordinates or sizes.
+You are the semantic planning layer for a dynamic Excalidraw canvas generator. Decide what the canvas should explain. Do not output pixel coordinates or dimensions; deterministic application code handles geometry.
+Return ONLY one JSON object.
 
-First infer the user's actual learning or design objective, intended audience, requested depth, and explicit deliverables. Use specific concepts and real semantic relationships. Do not invent infrastructure or add filler merely to make a canvas look full. Keep titles informative and labels concise. Include equations, mechanisms, caveats, or notes only when they help explain the requested topic.
-
-Return ONLY one JSON object matching this shape for a technical diagram:
+For a technical diagram:
 {
-  "pattern": "<supported pattern id | wireframe | freeform>",
-  "direction": "LR" | "TB",
+  "pattern": "pipeline|flow|tiers|swimlane|comparison|layers-net|tree|hub|cycle|composite|freeform",
+  "direction": "LR|TB",
   "title": "specific title",
-  "subtitle": "short statement of what the canvas explains",
-  "groups": [{ "id": "kebab-id", "label": "Tier / Lane / Layer name", "nodes": ["node-id"] }],
-  "nodes": [{ "id": "kebab-id", "label": "concrete concise label", "role": "hero|primary|secondary|supporting|external|decision" }],
-  "edges": [{ "from": "id", "to": "id", "label": "short optional label", "kind": "flow|feedback|skip|data" }],
-  "dense": [["layer-a", "layer-b"]],
-  "notes": [{ "title": "topic-specific title", "items": ["specific point"] }]
+  "subtitle": "short purpose",
+  "groups": [{"id":"stable-kebab-id","label":"region/group label","nodes":["node-id"]}],
+  "regions": [{"id":"region-id","label":"semantic region","row":0,"col":0,"direction":"LR|TB","nodes":["node-id"]}],
+  "nodes": [{"id":"stable-kebab-id","label":"specific concise label","role":"hero|primary|secondary|supporting|external|decision"}],
+  "edges": [{"from":"node-id","to":"node-id","label":"optional short label","kind":"flow|feedback|skip|data"}],
+  "dense": [["layer-a","layer-b"]],
+  "notes": [{"title":"specific note","items":["useful detail"]}]
 }
 
-PATTERNS:
+Available reusable grammars:
 ${catalogue}
 
-UI WIREFRAME MODE:
-Choose pattern "wireframe" when the user asks for a UI, website, app screen, dashboard, settings page, form, Kanban board, data table, login screen, or chat interface. For wireframe output, use this schema instead of nodes/groups/edges:
+For UI requests, use this open-ended composition schema rather than choosing from a fixed list of screen types:
 {
-  "pattern": "wireframe",
-  "screenType": "dashboard|login|settings|form|kanban|data-table|chat|generic",
-  "title": "screen title",
-  "subtitle": "short purpose",
-  "navigation": ["Overview", "Reports"],
-  "metrics": [{"label":"Revenue", "value":"$42.8k", "trend":"+12%"}],
-  "panels": [{"title":"Revenue Trend", "type":"chart|table|list|text", "items":["specific short item"]}],
-  "fields": [{"label":"Email", "placeholder":"name@example.com", "type":"text|password|select|date"}],
-  "actions": ["Save changes", "Cancel"],
-  "columns": ["Order", "Customer", "Status"],
-  "tasks": [{"title":"Implement search", "status":"In progress"}],
-  "messages": [{"sender":"Assistant", "text":"How can I help?"}]
+  "pattern":"wireframe",
+  "title":"specific screen title",
+  "subtitle":"short purpose",
+  "regions":[
+    {"id":"stable-region-id","label":"section purpose","row":0,"col":0,"layout":"row|column|grid","columns":2,
+     "components":[{"id":"stable-component-id","type":"heading|text|button|input|select|toggle|badge|card|metric|chart|table|list|navigation|tabs|avatar|image|code|divider|empty-state","label":"visible content","detail":"optional supporting text"}]}
+  ]
 }
-Supply only fields relevant to the selected screen type. These content fields are slots; do not supply geometry.
 
-FREEFORM:
-If none of the supported diagram patterns fits and it is not a UI wireframe, return {"pattern":"freeform"} only. The caller will use the legacy full-IR prompt.
-
-RULES
-1. Choose the best single primary pattern. Prefer a pattern that matches the semantics rather than the topic's keywords. Use wireframe only for actual interface layouts.
-2. IDs must be unique kebab-case after normalization. Every edge must reference existing nodes. Never create decorative or uncertain connections.
-3. Use role "decision" only for a real condition. Use "feedback" for genuine loop-back edges and "skip" for true bypass/residual paths.
-4. For tiers, swimlane, comparison, and layers-net, put every node in exactly one group. Comparison must have exactly two groups. Layers-net must have two or more groups.
-5. Keep nodes sufficient to explain the subject, without a fixed node count. Simple requests should stay simple; detailed requests should include the necessary mechanisms.
-6. Notes should add useful detail beyond the node labels. Do not include generic notes.
-7. Do not include markdown, code fences, or explanation outside the JSON.
+Composition rules:
+1. Choose a reusable visual grammar from the meaning/structure, not the topic name. These patterns are foundations, not an exhaustive list.
+2. Choose composite for hybrid diagrams with multiple regions, parallel subsystems, or distinct local flow structures. The model can define arbitrary region labels and relative row/column positions. Every node must belong to exactly one region.
+3. Choose wireframe for actual interface layouts; compose arbitrary regions from generic UI primitives. Do not assume every UI has a preexisting template.
+4. Use only semantically valid nodes and connections. Avoid invented components and decorative arrows.
+5. Keep labels compact. Put explanations in notes rather than long node labels. Include the mechanisms and detail explicitly requested by the user.
+6. For grouped patterns, every node must belong to exactly one group. IDs must be unique after slug normalization.
+7. If none of the supported diagram grammars fits, return {"pattern":"freeform"}; the caller will use the full Canvas IR prompt.
+8. Return JSON only, no markdown or explanation outside it.
 `;
 }
 
-module.exports = { T, PATTERNS, specToOperations, buildPatternInstructions, validatePatternSpec, sizeNode, gridLayout, rankGraph, snap, slug, clamp };
+module.exports = { T, PATTERNS, specToOperations, buildPatternInstructions, validatePatternSpec, sizeNode, sizeNetworkNode, gridLayout, rankGraph, snap, slug, clamp };

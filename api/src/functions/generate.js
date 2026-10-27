@@ -1,11 +1,7 @@
 const { app } = require("@azure/functions");
 const { randomUUID } = require("crypto");
 const { OpenAI } = require("openai");
-const {
-  specToOperations,
-  buildPatternInstructions,
-  validatePatternSpec
-} = require("./layout-patterns");
+const { specToOperations, buildPatternInstructions, validatePatternSpec } = require("./layout-patterns");
 
 // ============================================================
 // PROMPTS
@@ -1131,8 +1127,35 @@ function cleanId(value) {
  * Arrow routing is handled by the obstacle-aware orthogonal router below.
  */
 function edgePoint(from, to, offsetIndex = 0, totalFromEdge = 1) {
-  const side = getFacingEdge(from, to);
-  return edgePointOnSide(from, side, undefined, offsetIndex, totalFromEdge);
+  const fromCenterX = from.x + from.width / 2;
+  const fromCenterY = from.y + from.height / 2;
+
+  const toCenterX = to.x + to.width / 2;
+  const toCenterY = to.y + to.height / 2;
+
+  const dx = toCenterX - fromCenterX;
+  const dy = toCenterY - fromCenterY;
+
+  // Spread multiple arrows connected to the same edge
+  const edgeSpread = totalFromEdge > 1
+    ? (offsetIndex - (totalFromEdge - 1) / 2) * 20
+    : 0;
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return {
+      x: dx >= 0
+        ? from.x + from.width
+        : from.x,
+      y: Math.max(from.y + 10, Math.min(from.y + from.height - 10, fromCenterY + edgeSpread))
+    };
+  }
+
+  return {
+    x: Math.max(from.x + 10, Math.min(from.x + from.width - 10, fromCenterX + edgeSpread)),
+    y: dy >= 0
+      ? from.y + from.height
+      : from.y
+  };
 }
 
 function getFacingEdge(fromBlock, toBlock) {
@@ -1140,21 +1163,6 @@ function getFacingEdge(fromBlock, toBlock) {
   const dy = (toBlock.y + toBlock.height / 2) - (fromBlock.y + fromBlock.height / 2);
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "right" : "left";
   return dy >= 0 ? "bottom" : "top";
-}
-
-function edgePointOnSide(block, side, anchor, offsetIndex = 0, total = 1) {
-  const validSide = sanitizeArrowSide(side) || "right";
-  const spread = total > 1 ? (offsetIndex - (total - 1) / 2) * 0.16 : 0;
-  const a = Number.isFinite(anchor)
-    ? Math.max(0.08, Math.min(0.92, anchor))
-    : Math.max(0.12, Math.min(0.88, 0.5 + spread));
-  switch (validSide) {
-    case "left": return { x: block.x, y: block.y + block.height * a };
-    case "right": return { x: block.x + block.width, y: block.y + block.height * a };
-    case "top": return { x: block.x + block.width * a, y: block.y };
-    case "bottom": return { x: block.x + block.width * a, y: block.y + block.height };
-    default: return { x: block.x + block.width, y: block.y + block.height / 2 };
-  }
 }
 
 function pointOutsideEdge(point, edge, distance = 18) {
@@ -1195,8 +1203,11 @@ function simplifyOrthogonalPath(points) {
   const unique = [];
   for (const point of points) {
     const previous = unique[unique.length - 1];
-    if (!previous || Math.abs(previous.x - point.x) > 0.01 || Math.abs(previous.y - point.y) > 0.01) unique.push(point);
+    if (!previous || Math.abs(previous.x - point.x) > 0.01 || Math.abs(previous.y - point.y) > 0.01) {
+      unique.push(point);
+    }
   }
+
   const simplified = [];
   for (const point of unique) {
     while (simplified.length >= 2) {
@@ -1212,214 +1223,344 @@ function simplifyOrthogonalPath(points) {
   return simplified;
 }
 
-function routeSegments(path) {
-  const segments = [];
-  for (let i = 1; i < (path || []).length; i++) segments.push([path[i - 1], path[i]]);
-  return segments;
-}
-
-// Penalize a candidate route that crosses or substantially overlaps a route
-// already placed on the canvas. This makes routing order-aware and reduces
-// visual spaghetti in dense diagrams without forcing every route into a lane.
-function segmentRoutePenalty(a, b, existingSegments) {
-  let penalty = 0;
-  for (const [c, d] of existingSegments || []) {
-      const aH = Math.abs(a.y - b.y) < 0.01;
-      const cH = Math.abs(c.y - d.y) < 0.01;
-      if (aH && cH) {
-        if (Math.abs(a.y - c.y) > 0.01) continue;
-        const overlap = Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) -
-          Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x));
-        if (overlap > 20) penalty += 220;
-      } else if (!aH && !cH) {
-        if (Math.abs(a.x - c.x) > 0.01) continue;
-        const overlap = Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y)) -
-          Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y));
-        if (overlap > 20) penalty += 220;
-      } else {
-        const h = aH ? [a, b] : [c, d];
-        const v = aH ? [c, d] : [a, b];
-        const ix = v[0].x, iy = h[0].y;
-        const withinH = ix > Math.min(h[0].x, h[1].x) + 4 && ix < Math.max(h[0].x, h[1].x) - 4;
-        const withinV = iy > Math.min(v[0].y, v[1].y) + 4 && iy < Math.max(v[0].y, v[1].y) - 4;
-        if (withinH && withinV) penalty += 900;
-      }
-  }
-  return penalty;
-}
-
-/* Visibility-grid orthogonal router. */
-function findOrthogonalPath(startLead, endLead, obstacles, existingRoutes = []) {
-  const existingSegments = (existingRoutes || []).flatMap(routeSegments);
+/*
+ * Visibility-grid orthogonal router:
+ * - uses ports on the actual node boundaries
+ * - leaves each port in its outward direction
+ * - routes around padded node rectangles
+ * - penalizes bends so routes remain simple
+ * - returns a polyline suitable for Excalidraw's arrow `points`
+ */
+function findOrthogonalPath(startLead, endLead, obstacles) {
   const clearance = 14;
   const nearby = obstacles.filter((r) =>
     r.right >= Math.min(startLead.x, endLead.x) - 220 &&
     r.left <= Math.max(startLead.x, endLead.x) + 220 &&
     r.bottom >= Math.min(startLead.y, endLead.y) - 220 &&
     r.top <= Math.max(startLead.y, endLead.y) + 220
-  ).map((r) => ({ left: r.left - clearance, right: r.right + clearance, top: r.top - clearance, bottom: r.bottom + clearance }));
+  ).map((r) => ({
+    left: r.left - clearance,
+    right: r.right + clearance,
+    top: r.top - clearance,
+    bottom: r.bottom + clearance
+  }));
 
   const margin = 80;
   const minX = Math.min(startLead.x, endLead.x, ...nearby.map((r) => r.left)) - margin;
   const maxX = Math.max(startLead.x, endLead.x, ...nearby.map((r) => r.right)) + margin;
   const minY = Math.min(startLead.y, endLead.y, ...nearby.map((r) => r.top)) - margin;
   const maxY = Math.max(startLead.y, endLead.y, ...nearby.map((r) => r.bottom)) + margin;
-  let xs = uniqueSortedNumbers([startLead.x, endLead.x, minX, maxX, ...nearby.flatMap((r) => [r.left, r.right])]);
-  let ys = uniqueSortedNumbers([startLead.y, endLead.y, minY, maxY, ...nearby.flatMap((r) => [r.top, r.bottom])]);
+
+  let xs = uniqueSortedNumbers([
+    startLead.x, endLead.x, minX, maxX,
+    ...nearby.flatMap((r) => [r.left, r.right])
+  ]);
+  let ys = uniqueSortedNumbers([
+    startLead.y, endLead.y, minY, maxY,
+    ...nearby.flatMap((r) => [r.top, r.bottom])
+  ]);
+
+  // Avoid pathological grids on very large canvases. Keep the coordinates
+  // closest to either endpoint and retain the outer escape lanes.
   const capCoordinates = (coords, a, b) => {
     if (coords.length <= 140) return coords;
     const mandatory = new Set([a, b, coords[0], coords[coords.length - 1]]);
     const remaining = coords.filter((v) => !mandatory.has(v))
-      .sort((u, v) => Math.min(Math.abs(u - a), Math.abs(u - b)) - Math.min(Math.abs(v - a), Math.abs(v - b)))
+      .sort((u, v) => Math.min(Math.abs(u - a), Math.abs(u - b)) -
+        Math.min(Math.abs(v - a), Math.abs(v - b)))
       .slice(0, 136);
     return uniqueSortedNumbers([...mandatory, ...remaining]);
   };
   xs = capCoordinates(xs, startLead.x, endLead.x);
   ys = capCoordinates(ys, startLead.y, endLead.y);
+
   const blocked = (x, y) => nearby.some((r) => pointInsideRect({ x, y }, r));
   const clearSegment = (a, b) => nearby.every((r) => !segmentHitsRect(a, b, r));
-  const startX = xs.indexOf(Math.round(startLead.x * 100) / 100), startY = ys.indexOf(Math.round(startLead.y * 100) / 100);
-  const endX = xs.indexOf(Math.round(endLead.x * 100) / 100), endY = ys.indexOf(Math.round(endLead.y * 100) / 100);
+
+  const startX = xs.indexOf(Math.round(startLead.x * 100) / 100);
+  const startY = ys.indexOf(Math.round(startLead.y * 100) / 100);
+  const endX = xs.indexOf(Math.round(endLead.x * 100) / 100);
+  const endY = ys.indexOf(Math.round(endLead.y * 100) / 100);
   if ([startX, startY, endX, endY].some((v) => v < 0)) return null;
 
-  const width = xs.length, height = ys.length;
+  const width = xs.length;
+  const height = ys.length;
   const key = (ix, iy, dir) => `${ix},${iy},${dir}`;
   const parseKey = (value) => value.split(",").map(Number);
   const startKey = key(startX, startY, "N");
-  const distances = new Map([[startKey, 0]]), previous = new Map(), open = [{ key: startKey, cost: 0 }];
-  const directions = [{ dx: -1, dy: 0, dir: "H" }, { dx: 1, dy: 0, dir: "H" }, { dx: 0, dy: -1, dir: "V" }, { dx: 0, dy: 1, dir: "V" }];
+  const distances = new Map([[startKey, 0]]);
+  const previous = new Map();
+  const open = [{ key: startKey, cost: 0 }];
+  const directions = [
+    { dx: -1, dy: 0, dir: "H" },
+    { dx: 1, dy: 0, dir: "H" },
+    { dx: 0, dy: -1, dir: "V" },
+    { dx: 0, dy: 1, dir: "V" }
+  ];
+
+  // Small binary min-heap.
   const push = (item) => {
-    open.push(item); let i = open.length - 1;
-    while (i > 0) { const parent = Math.floor((i - 1) / 2); if (open[parent].cost <= item.cost) break; open[i] = open[parent]; i = parent; }
+    open.push(item);
+    let i = open.length - 1;
+    while (i > 0) {
+      const parent = Math.floor((i - 1) / 2);
+      if (open[parent].cost <= item.cost) break;
+      open[i] = open[parent];
+      i = parent;
+    }
     open[i] = item;
   };
   const pop = () => {
-    const root = open[0], last = open.pop();
+    const root = open[0];
+    const last = open.pop();
     if (open.length && last) {
       let i = 0;
-      while (true) { let child = i * 2 + 1; if (child >= open.length) break; if (child + 1 < open.length && open[child + 1].cost < open[child].cost) child++; if (open[child].cost >= last.cost) break; open[i] = open[child]; i = child; }
+      while (true) {
+        let child = i * 2 + 1;
+        if (child >= open.length) break;
+        if (child + 1 < open.length && open[child + 1].cost < open[child].cost) child++;
+        if (open[child].cost >= last.cost) break;
+        open[i] = open[child];
+        i = child;
+      }
       open[i] = last;
     }
     return root;
   };
-  let finalKey = null, iterations = 0;
+
+  let finalKey = null;
+  let iterations = 0;
   const maxIterations = Math.min(width * height * 4, 100000);
   while (open.length && iterations++ < maxIterations) {
     const current = pop();
     if (current.cost !== distances.get(current.key)) continue;
     const [ix, iy, dir] = parseKey(current.key);
-    if (ix === endX && iy === endY) { finalKey = current.key; break; }
+    if (ix === endX && iy === endY) {
+      finalKey = current.key;
+      break;
+    }
+
     const a = { x: xs[ix], y: ys[iy] };
     for (const move of directions) {
-      const nx = ix + move.dx, ny = iy + move.dy;
+      const nx = ix + move.dx;
+      const ny = iy + move.dy;
       if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
       const b = { x: xs[nx], y: ys[ny] };
       if (blocked(b.x, b.y) || !clearSegment(a, b)) continue;
+
       const length = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
       const bendPenalty = dir !== "N" && dir !== move.dir ? 28 : 0;
-      const crossingPenalty = segmentRoutePenalty(a, b, existingSegments);
-      const nextKey = key(nx, ny, move.dir), nextCost = current.cost + length + bendPenalty + crossingPenalty;
-      if (nextCost < (distances.get(nextKey) ?? Infinity)) { distances.set(nextKey, nextCost); previous.set(nextKey, current.key); push({ key: nextKey, cost: nextCost }); }
+      const nextKey = key(nx, ny, move.dir);
+      const nextCost = current.cost + length + bendPenalty;
+      if (nextCost < (distances.get(nextKey) ?? Infinity)) {
+        distances.set(nextKey, nextCost);
+        previous.set(nextKey, current.key);
+        push({ key: nextKey, cost: nextCost });
+      }
     }
   }
+
   if (!finalKey) return null;
-  const path = []; let cursor = finalKey;
-  while (cursor) { const [ix, iy] = parseKey(cursor); path.push({ x: xs[ix], y: ys[iy] }); if (cursor === startKey) break; cursor = previous.get(cursor); }
+  const path = [];
+  let cursor = finalKey;
+  while (cursor) {
+    const [ix, iy] = parseKey(cursor);
+    path.push({ x: xs[ix], y: ys[iy] });
+    if (cursor === startKey) break;
+    cursor = previous.get(cursor);
+  }
   path.reverse();
   return simplifyOrthogonalPath(path);
 }
 
-function buildArrowGeometry(startBlock, endBlock, startIndex = 0, startTotal = 1, endIndex = 0, endTotal = 1, nativeMap = null, routing = {}) {
-  const startEdge = sanitizeArrowSide(routing.fromSide) || getFacingEdge(startBlock, endBlock);
-  const endEdge = sanitizeArrowSide(routing.toSide) || getFacingEdge(endBlock, startBlock);
-  const startPoint = edgePointOnSide(startBlock, startEdge, sanitizeArrowAnchor(routing.fromAnchor), startIndex, startTotal);
-  const endPoint = edgePointOnSide(endBlock, endEdge, sanitizeArrowAnchor(routing.toAnchor), endIndex, endTotal);
+const ARROW_BINDING_GAP = 2;
+const ARROW_SIDES = new Set(["top", "right", "bottom", "left"]);
+function safeArrowSide(value) { return typeof value === "string" && ARROW_SIDES.has(value) ? value : undefined; }
+function safeArrowAnchor(value) { return typeof value === "number" && Number.isFinite(value) ? Math.max(0.08, Math.min(0.92, value)) : undefined; }
+function edgePointOnSide(block, side, anchor, offsetIndex = 0, total = 1) {
+  const validSide = safeArrowSide(side) || "right";
+  const spread = total > 1 ? (offsetIndex - (total - 1) / 2) * 0.16 : 0;
+  const a = safeArrowAnchor(anchor) ?? Math.max(0.12, Math.min(0.88, 0.5 + spread));
+  if (validSide === "left") return { x: block.x, y: block.y + block.height * a };
+  if (validSide === "right") return { x: block.x + block.width, y: block.y + block.height * a };
+  if (validSide === "top") return { x: block.x + block.width * a, y: block.y };
+  return { x: block.x + block.width * a, y: block.y + block.height };
+}
+function outsideBindingGap(point, side, gap = ARROW_BINDING_GAP) {
+  if (side === "left") return { x: point.x - gap, y: point.y };
+  if (side === "right") return { x: point.x + gap, y: point.y };
+  if (side === "top") return { x: point.x, y: point.y - gap };
+  return { x: point.x, y: point.y + gap };
+}
+function endpointAbsolute(arrow, end) {
+  const pts = arrow?.points;
+  if (!Array.isArray(pts) || pts.length < 2) return null;
+  const p = end === "start" ? pts[0] : pts[pts.length - 1];
+  return Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: arrow.x + p[0], y: arrow.y + p[1] } : null;
+}
+function bindingFocus(block, side, point, anchor) {
+  if (anchor !== undefined) return Math.max(-0.92, Math.min(0.92, (anchor - 0.5) * 2));
+  if (!point) return 0;
+  const along = side === "left" || side === "right"
+    ? (point.y - (block.y + block.height / 2)) / Math.max(1, block.height / 2)
+    : (point.x - (block.x + block.width / 2)) / Math.max(1, block.width / 2);
+  return Math.max(-0.92, Math.min(0.92, along));
+}
 
-  // Straight routes are useful for sampled dense neural-network connections;
-  // the layout engine opts in explicitly. Other arrows use obstacle-aware paths.
-  if (sanitizeArrowRoute(routing.route) === "straight") {
-    const absolutePoints = [startPoint, endPoint];
-    return { x: startPoint.x, y: startPoint.y, points: [[0, 0], [endPoint.x - startPoint.x, endPoint.y - startPoint.y]], absolutePoints };
-  }
-
+function buildArrowGeometry(
+  startBlock,
+  endBlock,
+  startIndex = 0,
+  startTotal = 1,
+  endIndex = 0,
+  endTotal = 1,
+  nativeMap = null,
+  routing = {}
+) {
+  const startEdge = safeArrowSide(routing.fromSide) || getFacingEdge(startBlock, endBlock);
+  const endEdge = safeArrowSide(routing.toSide) || getFacingEdge(endBlock, startBlock);
+  const startBoundary = edgePointOnSide(startBlock, startEdge, safeArrowAnchor(routing.fromAnchor), startIndex, startTotal);
+  const endBoundary = edgePointOnSide(endBlock, endEdge, safeArrowAnchor(routing.toAnchor), endIndex, endTotal);
+  const startPoint = outsideBindingGap(startBoundary, startEdge);
+  const endPoint = outsideBindingGap(endBoundary, endEdge);
   const startLead = pointOutsideEdge(startPoint, startEdge);
   const endLead = pointOutsideEdge(endPoint, endEdge);
+
   const obstacles = [];
   if (nativeMap) {
     for (const block of nativeMap.values()) {
-      // Groups are transparent containers, not obstacles. Treating their
-      // enclosing rectangle as an obstacle forces arrows outside every tier.
-      if (block?.semanticKind === "group") continue;
+      if (block?.semanticKind === "group" || block?.visualStyle === "group") continue;
       if (!isNativeBlock(block) || block.id === startBlock.id || block.id === endBlock.id) continue;
       if (![block.x, block.y, block.width, block.height].every(Number.isFinite)) continue;
-      obstacles.push({ left: block.x, top: block.y, right: block.x + block.width, bottom: block.y + block.height });
+      obstacles.push({
+        left: block.x,
+        top: block.y,
+        right: block.x + block.width,
+        bottom: block.y + block.height
+      });
     }
   }
-  const middlePath = findOrthogonalPath(startLead, endLead, obstacles, routing.priorRoutes || []);
+
+  if (routing.route === "straight") {
+    const absolutePoints = [startPoint, endPoint];
+    return { x: absolutePoints[0].x, y: absolutePoints[0].y, points: [[0, 0], [endPoint.x - startPoint.x, endPoint.y - startPoint.y]] };
+  }
+  const middlePath = findOrthogonalPath(startLead, endLead, obstacles);
   let absolutePoints;
-  if (middlePath && middlePath.length) absolutePoints = simplifyOrthogonalPath([startPoint, startLead, ...middlePath, endLead, endPoint]);
-  else absolutePoints = simplifyOrthogonalPath([startPoint, { x: endPoint.x, y: startPoint.y }, endPoint]);
-  return { x: absolutePoints[0].x, y: absolutePoints[0].y, points: absolutePoints.map((point, index) => index === 0 ? [0, 0] : [point.x - absolutePoints[0].x, point.y - absolutePoints[0].y]), absolutePoints };
+  if (middlePath && middlePath.length) {
+    absolutePoints = simplifyOrthogonalPath([startPoint, startLead, ...middlePath, endLead, endPoint]);
+  } else {
+    // Last-resort fallback for overlapping or degenerate layouts.
+    absolutePoints = simplifyOrthogonalPath([
+      startPoint,
+      { x: endPoint.x, y: startPoint.y },
+      endPoint
+    ]);
+  }
+
+  return {
+    x: absolutePoints[0].x,
+    y: absolutePoints[0].y,
+    points: absolutePoints.map((point, index) => index === 0
+      ? [0, 0]
+      : [point.x - absolutePoints[0].x, point.y - absolutePoints[0].y])
+  };
 }
 
-function rerouteNativeArrow(arrow, nativeMap) {
-  if (!isNativeArrow(arrow)) return false;
-  const startId = getArrowEndpointId(arrow, "start"), endId = getArrowEndpointId(arrow, "end");
-  if (!startId || !endId) return false;
-  const startBlock = nativeMap.get(startId), endBlock = nativeMap.get(endId);
-  if (!startBlock || !endBlock || !isNativeBlock(startBlock) || !isNativeBlock(endBlock)) return false;
-  if (![startBlock.width, startBlock.height, endBlock.width, endBlock.height].every((v) => typeof v === "number")) return false;
-  const geometry = buildArrowGeometry(startBlock, endBlock, 0, 1, 0, 1, nativeMap, {
-    fromSide: arrow.fromSide, toSide: arrow.toSide,
-    fromAnchor: arrow.fromAnchor, toAnchor: arrow.toAnchor,
-    route: arrow.route, edgeKind: arrow.edgeKind
-  });
-  arrow.x = geometry.x; arrow.y = geometry.y; arrow.points = geometry.points;
-  return true;
+function syncExcalidrawArrowBindings(nativeMap) {
+  const refsByTarget = new Map();
+  for (const [arrowId, arrow] of nativeMap) {
+    if (!isNativeArrow(arrow)) continue;
+    const startId = getArrowEndpointId(arrow, "start");
+    const endId = getArrowEndpointId(arrow, "end");
+    const start = nativeMap.get(startId), end = nativeMap.get(endId);
+    if (!startId || !endId || !isNativeBlock(start) || !isNativeBlock(end)) {
+      if (!isNativeBlock(start)) arrow.startBinding = null;
+      if (!isNativeBlock(end)) arrow.endBinding = null;
+      continue;
+    }
+    const startSide = safeArrowSide(arrow.fromSide) || getFacingEdge(start, end);
+    const endSide = safeArrowSide(arrow.toSide) || getFacingEdge(end, start);
+    const startPoint = endpointAbsolute(arrow, "start"), endPoint = endpointAbsolute(arrow, "end");
+    arrow.startBinding = { elementId: startId, focus: bindingFocus(start, startSide, startPoint, safeArrowAnchor(arrow.fromAnchor)), gap: ARROW_BINDING_GAP };
+    arrow.endBinding = { elementId: endId, focus: bindingFocus(end, endSide, endPoint, safeArrowAnchor(arrow.toAnchor)), gap: ARROW_BINDING_GAP };
+    for (const targetId of [startId, endId]) {
+      if (!refsByTarget.has(targetId)) refsByTarget.set(targetId, []);
+      refsByTarget.get(targetId).push({ id: arrowId, type: "arrow" });
+    }
+  }
+  for (const [id, element] of nativeMap) {
+    if (!isNativeBlock(element)) continue;
+    const nonArrow = (Array.isArray(element.boundElements) ? element.boundElements : []).filter((item) => item && item.type !== "arrow" && typeof item.id === "string");
+    const seen = new Set();
+    element.boundElements = [...nonArrow, ...(refsByTarget.get(id) || [])].filter((item) => {
+      const key = `${item.type}:${item.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (!element.boundElements.length) element.boundElements = null;
+  }
 }
 
 function rerouteAllArrows(nativeMap) {
-  const startEdgeGroups = new Map(), endEdgeGroups = new Map();
-  const edges = [];
+  const startEdgeGroups = new Map();
+  const endEdgeGroups = new Map();
+
   for (const [id, native] of nativeMap) {
     if (!isNativeArrow(native)) continue;
-    const startId = getArrowEndpointId(native, "start"), endId = getArrowEndpointId(native, "end");
-    const startBlock = nativeMap.get(startId), endBlock = nativeMap.get(endId);
+    const startId = getArrowEndpointId(native, "start");
+    const endId = getArrowEndpointId(native, "end");
+    const startBlock = nativeMap.get(startId);
+    const endBlock = nativeMap.get(endId);
     if (!startBlock || !endBlock || !isNativeBlock(startBlock) || !isNativeBlock(endBlock)) continue;
-    const startEdge = sanitizeArrowSide(native.fromSide) || getFacingEdge(startBlock, endBlock);
-    const endEdge = sanitizeArrowSide(native.toSide) || getFacingEdge(endBlock, startBlock);
-    const startKey = `${startId}:${startEdge}`, endKey = `${endId}:${endEdge}`;
+
+    const startEdge = safeArrowSide(native.fromSide) || getFacingEdge(startBlock, endBlock);
+    const endEdge = safeArrowSide(native.toSide) || getFacingEdge(endBlock, startBlock);
+    const startKey = `${startId}:${startEdge}`;
+    const endKey = `${endId}:${endEdge}`;
     if (!startEdgeGroups.has(startKey)) startEdgeGroups.set(startKey, []);
     if (!endEdgeGroups.has(endKey)) endEdgeGroups.set(endKey, []);
-    startEdgeGroups.get(startKey).push(id); endEdgeGroups.get(endKey).push(id);
-    edges.push({ id, native, startId, endId, startBlock, endBlock, startEdge, endEdge, startKey, endKey });
+    startEdgeGroups.get(startKey).push(id);
+    endEdgeGroups.get(endKey).push(id);
   }
 
-  const priorRoutes = [];
-  for (const edge of edges) {
-    const { id, native, startBlock, endBlock, startEdge, endEdge, startKey, endKey } = edge;
-    const startList = startEdgeGroups.get(startKey) || [id], endList = endEdgeGroups.get(endKey) || [id];
+  for (const [id, native] of nativeMap) {
+    if (!isNativeArrow(native)) continue;
+    const startId = getArrowEndpointId(native, "start");
+    const endId = getArrowEndpointId(native, "end");
+    const startBlock = nativeMap.get(startId);
+    const endBlock = nativeMap.get(endId);
+    if (!startBlock || !endBlock || !isNativeBlock(startBlock) || !isNativeBlock(endBlock)) continue;
+
+    const startEdge = safeArrowSide(native.fromSide) || getFacingEdge(startBlock, endBlock);
+    const endEdge = safeArrowSide(native.toSide) || getFacingEdge(endBlock, startBlock);
+    const startList = startEdgeGroups.get(`${startId}:${startEdge}`) || [id];
+    const endList = endEdgeGroups.get(`${endId}:${endEdge}`) || [id];
     const geometry = buildArrowGeometry(
-      startBlock, endBlock,
-      Math.max(0, startList.indexOf(id)), startList.length,
-      Math.max(0, endList.indexOf(id)), endList.length,
+      startBlock,
+      endBlock,
+      Math.max(0, startList.indexOf(id)),
+      startList.length,
+      Math.max(0, endList.indexOf(id)),
+      endList.length,
       nativeMap,
-      {
-        fromSide: startEdge,
-        toSide: endEdge,
-        fromAnchor: sanitizeArrowAnchor(native.fromAnchor),
-        toAnchor: sanitizeArrowAnchor(native.toAnchor),
-        route: native.route,
-        edgeKind: native.edgeKind,
-        priorRoutes
-      }
+      { fromSide: startEdge, toSide: endEdge, fromAnchor: native.fromAnchor, toAnchor: native.toAnchor, route: native.route }
     );
-    if (native.route !== "straight" && Array.isArray(geometry.absolutePoints)) priorRoutes.push(geometry.absolutePoints);
-    native.x = geometry.x; native.y = geometry.y; native.points = geometry.points;
-    native.endArrowhead = "arrow"; native.strokeWidth = 2; native.roughness = 0;
-    if (!native.strokeColor || native.strokeColor === "#1e1e1e") native.strokeColor = "#495057";
+
+    native.x = geometry.x;
+    native.y = geometry.y;
+    native.points = geometry.points;
+    native.endArrowhead = "arrow";
+    native.strokeWidth = 2;
+    native.roughness = 0;
+    if (!native.strokeColor || native.strokeColor === "#1e1e1e") {
+      native.strokeColor = "#495057";
+    }
   }
+  syncExcalidrawArrowBindings(nativeMap);
 }
+
 
 // ============================================================
 // SEMANTIC THEME
@@ -1600,27 +1741,6 @@ function sanitizeRelationshipType(value) {
   return ALLOWED_RELATIONSHIP_TYPES.has(value)
     ? value
     : cleanText(value, 50) || undefined;
-}
-
-const ALLOWED_ARROW_SIDES = new Set(["top", "right", "bottom", "left"]);
-const ALLOWED_EDGE_KINDS = new Set(["flow", "feedback", "skip", "data"]);
-
-function sanitizeArrowSide(value) {
-  return typeof value === "string" && ALLOWED_ARROW_SIDES.has(value)
-    ? value
-    : undefined;
-}
-
-function sanitizeArrowAnchor(value) {
-  return isFiniteNumber(value) ? Math.max(0.08, Math.min(0.92, value)) : undefined;
-}
-
-function sanitizeArrowRoute(value) {
-  return value === "straight" || value === "orthogonal" ? value : undefined;
-}
-
-function sanitizeEdgeKind(value) {
-  return typeof value === "string" && ALLOWED_EDGE_KINDS.has(value) ? value : undefined;
 }
 
 
@@ -1959,9 +2079,66 @@ function applyBulletChanges(items, changes) {
 // NATIVE ARROW ROUTING
 // ============================================================
 
-// Arrow routing is implemented in the geometry section above. Keep one
-// implementation only so generated pattern ports are honored consistently.
+function rerouteNativeArrow(
+  arrow,
+  nativeMap
+) {
+  if (!isNativeArrow(arrow)) {
+    return false;
+  }
 
+  const startId = getArrowEndpointId(
+    arrow,
+    "start"
+  );
+
+  const endId = getArrowEndpointId(
+    arrow,
+    "end"
+  );
+
+  if (!startId || !endId) {
+    return false;
+  }
+
+  const startBlock = nativeMap.get(startId);
+  const endBlock = nativeMap.get(endId);
+
+  if (
+    !startBlock ||
+    !endBlock ||
+    !isNativeBlock(startBlock) ||
+    !isNativeBlock(endBlock)
+  ) {
+    return false;
+  }
+
+  if (
+    typeof startBlock.width !== "number" ||
+    typeof startBlock.height !== "number" ||
+    typeof endBlock.width !== "number" ||
+    typeof endBlock.height !== "number"
+  ) {
+    return false;
+  }
+
+  const geometry = buildArrowGeometry(
+    startBlock,
+    endBlock,
+    0,
+    1,
+    0,
+    1,
+    nativeMap,
+    { fromSide: arrow.fromSide, toSide: arrow.toSide, fromAnchor: arrow.fromAnchor, toAnchor: arrow.toAnchor, route: arrow.route }
+  );
+
+  arrow.x = geometry.x;
+  arrow.y = geometry.y;
+  arrow.points = geometry.points;
+
+  return true;
+}
 
 // ============================================================
 // EXISTING CANVAS -> SEMANTIC IR
@@ -2035,26 +2212,15 @@ function convertNativeElementsToIR(elements) {
        * semantic relationshipType. Keep any application-level
        * metadata if it exists.
        */
-      if (
-        typeof element.relationshipType === "string"
-      ) {
-        relationship.relationshipType =
-          sanitizeRelationshipType(
-            element.relationshipType
-          );
+      if (typeof element.relationshipType === "string") {
+        relationship.relationshipType = sanitizeRelationshipType(element.relationshipType);
       }
-      const fromSide = sanitizeArrowSide(element.fromSide);
-      const toSide = sanitizeArrowSide(element.toSide);
-      const fromAnchor = sanitizeArrowAnchor(element.fromAnchor);
-      const toAnchor = sanitizeArrowAnchor(element.toAnchor);
-      const route = sanitizeArrowRoute(element.route);
-      const edgeKind = sanitizeEdgeKind(element.edgeKind);
-      if (fromSide) relationship.fromSide = fromSide;
-      if (toSide) relationship.toSide = toSide;
-      if (fromAnchor !== undefined) relationship.fromAnchor = fromAnchor;
-      if (toAnchor !== undefined) relationship.toAnchor = toAnchor;
-      if (route) relationship.route = route;
-      if (edgeKind) relationship.edgeKind = edgeKind;
+      for (const key of ["fromSide", "toSide", "route", "edgeKind"]) {
+        if (typeof element[key] === "string" && element[key].length <= 20) relationship[key] = element[key];
+      }
+      for (const key of ["fromAnchor", "toAnchor"]) {
+        if (typeof element[key] === "number" && Number.isFinite(element[key])) relationship[key] = Math.max(0.08, Math.min(0.92, element[key]));
+      }
 
       ir.push(relationship);
       continue;
@@ -2086,35 +2252,6 @@ function convertNativeElementsToIR(elements) {
         }
       });
 
-      continue;
-    }
-
-    // Preserve explicit semantic kinds before applying legacy shape heuristics.
-    // Otherwise group containers and empty notes are reclassified as nodes.
-    if (isNativeBlock(element) && (element.semanticKind === "group" || (Array.isArray(element.children) && element.visualStyle === "group"))) {
-      ir.push({
-        id,
-        kind: "group",
-        label: cleanText(getNativeElementLabel(element), 200) || "",
-        children: Array.isArray(element.children) ? element.children.map(cleanId).filter(Boolean) : [],
-        position: { x: clampX(element.x), y: clampY(element.y) },
-        size: { width: clampWidth(element.width, 300, 100), height: clampHeight(element.height, 180, 80) },
-        style: { visual: sanitizeVisualStyle(element.visualStyle) || "group" }
-      });
-      continue;
-    }
-
-    if (isNativeBlock(element) && element.semanticKind === "note") {
-      const noteData = parseNoteText(getNativeElementLabel(element));
-      ir.push({
-        id,
-        kind: "note",
-        title: noteData.title,
-        items: noteData.items,
-        position: { x: clampX(element.x), y: clampY(element.y) },
-        size: { width: clampWidth(element.width, 250, 100), height: clampHeight(element.height, 200, 60) },
-        style: { visual: sanitizeVisualStyle(element.visualStyle) || "annotation" }
-      });
       continue;
     }
 
@@ -2385,11 +2522,11 @@ function renderSingleIRNode(element) {
       ],
 
       startBinding: {
-        elementId: cleanId(element.from)
+        elementId: cleanId(element.from), focus: 0, gap: ARROW_BINDING_GAP
       },
 
       endBinding: {
-        elementId: cleanId(element.to)
+        elementId: cleanId(element.to), focus: 0, gap: ARROW_BINDING_GAP
       },
 
       strokeColor: "#495057",
@@ -2422,15 +2559,10 @@ function renderSingleIRNode(element) {
         element.relationshipType
       );
 
-    if (relationshipType) {
-      out.relationshipType =
-        relationshipType;
-    }
-
-    for (const key of ["fromSide", "toSide", "fromAnchor", "toAnchor", "route", "edgeKind"]) {
+    if (relationshipType) out.relationshipType = relationshipType;
+    for (const key of ["fromSide", "toSide", "route", "edgeKind", "fromAnchor", "toAnchor"]) {
       if (element[key] !== undefined) out[key] = element[key];
     }
-
     return out;
   }
 
@@ -3493,9 +3625,7 @@ function applyOperationsToCanvas(
           existingIR.from =
             fromId;
 
-          native.startBinding = {
-            elementId: fromId
-          };
+          native.startBinding = { elementId: fromId, focus: 0, gap: ARROW_BINDING_GAP };
 
           arrowsToReroute.add(
             id
@@ -3520,9 +3650,7 @@ function applyOperationsToCanvas(
           existingIR.to =
             toId;
 
-          native.endBinding = {
-            elementId: toId
-          };
+          native.endBinding = { elementId: toId, focus: 0, gap: ARROW_BINDING_GAP };
 
           arrowsToReroute.add(
             id
@@ -3984,26 +4112,13 @@ function sanitizeIRForAdd(raw) {
         relationshipType;
     }
 
-    if (label) {
-      relationship.label =
-        label;
+    if (label) relationship.label = label;
+    for (const key of ["fromSide", "toSide", "route", "edgeKind"]) {
+      if (typeof raw[key] === "string" && raw[key].length <= 20) relationship[key] = raw[key];
     }
-
-    // Pattern-generated routing intent must survive sanitization and native
-    // rendering; otherwise the router silently replaces the selected ports.
-    const fromSide = sanitizeArrowSide(raw.fromSide);
-    const toSide = sanitizeArrowSide(raw.toSide);
-    const fromAnchor = sanitizeArrowAnchor(raw.fromAnchor);
-    const toAnchor = sanitizeArrowAnchor(raw.toAnchor);
-    const route = sanitizeArrowRoute(raw.route);
-    const edgeKind = sanitizeEdgeKind(raw.edgeKind);
-    if (fromSide) relationship.fromSide = fromSide;
-    if (toSide) relationship.toSide = toSide;
-    if (fromAnchor !== undefined) relationship.fromAnchor = fromAnchor;
-    if (toAnchor !== undefined) relationship.toAnchor = toAnchor;
-    if (route) relationship.route = route;
-    if (edgeKind) relationship.edgeKind = edgeKind;
-
+    for (const key of ["fromAnchor", "toAnchor"]) {
+      if (typeof raw[key] === "number" && Number.isFinite(raw[key])) relationship[key] = Math.max(0.08, Math.min(0.92, raw[key]));
+    }
     return relationship;
   }
 
@@ -5457,65 +5572,54 @@ app.http(
         // ----------------------------------------------------
 
         let operations = null;
-        let generationMode = "pattern";
         let selectedPattern = null;
-
-        // First ask for a semantic pattern specification. The model selects
-        // the grammar and content; code owns geometry and route ports.
         try {
-          const patternPrompt = [
+          const plannerText = await callModel([
             buildPatternInstructions(),
             "Requested topic:",
             topic
-          ].join("\n\n");
-          const patternText = await callModel(patternPrompt, 6000);
-          const patternSpec = parseModelJson(patternText);
-          if (validatePatternSpec(patternSpec)) {
-            const patternResult = specToOperations(patternSpec);
+          ].join("\n\n"), 6000);
+          const spec = parseModelJson(plannerText);
+          if (validatePatternSpec(spec)) {
+            const patternResult = specToOperations(spec);
             if (patternResult && Array.isArray(patternResult.operations) && patternResult.operations.length) {
               operations = patternResult.operations;
-              selectedPattern = patternSpec.pattern;
-              console.info("Pattern generation selected.", {
-                requestId,
-                pattern: patternSpec.pattern,
-                operationCount: operations.length
-              });
+              selectedPattern = spec.pattern;
+              console.info("Pattern generation selected.", { requestId, pattern: selectedPattern, operationCount: operations.length });
             }
           }
         } catch (patternError) {
-          console.warn("Pattern generation unavailable; using legacy generation.", {
-            requestId,
-            message: patternError?.message || String(patternError)
-          });
+          console.warn("Pattern planner failed; using legacy creation prompt.", { requestId, message: patternError?.message || String(patternError) });
         }
 
-        // Compatibility fallback: retain the original high-detail IR prompt
-        // for unsupported patterns or malformed specifications.
+        // Preserve the original creation path for unsupported or malformed plans.
         if (!operations) {
-          generationMode = "legacy-fallback";
           const promptParts = [CREATE_INSTRUCTIONS, "Requested topic:", topic];
           const generatedText = await callModel(promptParts.join("\n\n"), 8000);
           operations = extractOperations(generatedText);
-          console.info("Legacy generation selected.", { requestId });
         }
 
         operations = validateOperationIds(operations);
-        operations = filterOperationsAgainstScene(operations, []);
 
-        /* Creation starts with an empty canvas. */
-        let finalElements = applyOperationsToCanvas([], operations);
+        operations =
+          filterOperationsAgainstScene(
+            operations,
+            []
+          );
+
+        /*
+         * Creation starts with an empty canvas.
+         */
+        let finalElements =
+          applyOperationsToCanvas(
+            [],
+            operations
+          );
 
         // Creation alone gets deterministic normalization and repair.
         finalElements = finalizeCreatedScene(finalElements);
-        // UI wireframes are compositions, not graph diagrams. Do not invoke
-        // the generic arrow-repair pass to invent relationships between UI
-        // controls when the selected wireframe intentionally has no arrows.
         if (selectedPattern !== "wireframe") {
-          finalElements = await repairCreationRelationships(
-            finalElements,
-            topic,
-            requestId
-          );
+          finalElements = await repairCreationRelationships(finalElements, topic, requestId);
         }
         finalElements = finalizeCreatedScene(finalElements);
 
@@ -5523,7 +5627,6 @@ app.http(
           "Creation completed.",
           {
             requestId,
-            generationMode,
             elementCount:
               finalElements.length,
             durationMs:
@@ -5590,7 +5693,6 @@ module.exports = {
   extractOperations,
   validateOperationIds,
   filterOperationsAgainstScene,
-  sanitizeArrowSide,
-  sanitizeArrowAnchor,
+  syncExcalidrawArrowBindings,
   edgePointOnSide
 };
