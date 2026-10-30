@@ -45,13 +45,14 @@ Mermaid syntax requirements are non-negotiable:
 - Keep labels short. Express mathematical notation as quoted label text, not Mermaid syntax.
 - Do not use raw HTML, Markdown fences, click directives, links, init directives, class/style directives, raw CSS, JavaScript, or embedded images.
 
-Output contract: return exactly one JSON object with one property, {"mermaid":"..."}. The value is Mermaid source only—no explanation, analysis, Markdown fence, or additional properties.
+Output contract: return exactly one json object with one property, {"mermaid":"..."}. The value is Mermaid source only—no explanation, analysis, Markdown fence, or additional properties.
 `.trim();
 
 function buildMermaidPrompt(instruction, existingMermaid) {
   const isEdit = Boolean(existingMermaid);
 
   return [
+    "Response format: return a json object with exactly one property named mermaid.",
     isEdit
       ? [
           "Existing Mermaid source:",
