@@ -1015,57 +1015,16 @@ button {
 */
 .editor-floating-actions {
   position: fixed;
-  left: 50%;
-  bottom: 19px;
-  transform: translateX(-50%);
-  z-index: 100;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 9px;
   pointer-events: none;
 }
-.editor-home-link,
 .platform-logout {
   pointer-events: auto;
-}
-
-.editor-home-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 35px;
-  padding: 4px 11px 4px 4px;
-  color: #403b4d;
-  border: 1px solid rgba(99, 91, 120, 0.16);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 5px 16px rgba(56, 48, 82, 0.1);
-  text-decoration: none;
-  font-size: 12px;
-  font-weight: 750;
-  backdrop-filter: blur(12px);
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    transform 160ms ease;
-}
-
-.editor-home-link:hover {
-  border-color: rgba(112, 88, 220, 0.45);
-  background: #ffffff;
-  transform: translateY(-1px);
-}
-
-.editor-home-mark {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  place-items: center;
-  color: #ffffff;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #5f4bdd, #9770fa);
-  box-shadow: 0 4px 10px rgba(96, 75, 221, 0.25);
-  font-size: 14px;
 }
 
 .platform-logout {
@@ -1100,16 +1059,10 @@ button {
 }
 
 /* Match your custom controls to Excalidraw dark mode. */
-.theme--dark .editor-home-link,
 .theme--dark .platform-logout {
   color: #e0dbe9;
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(38, 35, 48, 0.9);
-}
-
-.theme--dark .editor-home-link:hover {
-  border-color: rgba(164, 143, 255, 0.58);
-  background: rgba(58, 53, 71, 0.96);
 }
 
 .theme--dark .platform-logout:hover {
@@ -1126,17 +1079,9 @@ button {
   }
 
   .editor-floating-actions {
-    left: 10px;
+    right: 10px;
     bottom: 15px;
     gap: 7px;
-  }
-
-  .editor-home-link {
-    padding-right: 8px;
-  }
-
-  .editor-home-link > span:last-child {
-    display: none;
   }
 
   .platform-logout {

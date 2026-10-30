@@ -557,11 +557,6 @@ function EditorPage() {
       />
 
       <div className="editor-floating-actions">
-        <a href="/" className="editor-home-link" title="Back to home">
-          <span className="editor-home-mark">✦</span>
-          <span>AI Diagram</span>
-        </a>
-
         <button
           type="button"
           className="platform-logout"
