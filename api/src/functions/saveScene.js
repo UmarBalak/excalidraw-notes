@@ -5,6 +5,7 @@ const DATABASE_ID = "ExcalidrawNotesDB";
 const CONTAINER_ID = "Scenes";
 const MAX_TOPIC_LENGTH = 180;
 const MAX_ELEMENTS = 5000;
+const MAX_MERMAID_LENGTH = 24000;
 
 function getAuthenticatedUser(request) {
   const encodedPrincipal = request.headers.get("x-ms-client-principal");
@@ -69,7 +70,7 @@ function getScenesContainer() {
   return client.database(DATABASE_ID).container(CONTAINER_ID);
 }
 
-function validateScene(topic, elements) {
+function validateScene(topic, elements, mermaid, mermaidElementIds) {
   if (!topic) {
     return "A workspace topic is required.";
   }
@@ -88,6 +89,18 @@ function validateScene(topic, elements) {
 
   if (elements.length > MAX_ELEMENTS) {
     return `Canvas is too large. Maximum allowed elements: ${MAX_ELEMENTS}.`;
+  }
+
+  if (typeof mermaid !== "string") {
+    return "Mermaid source must be a string.";
+  }
+
+  if (mermaid.length > MAX_MERMAID_LENGTH) {
+    return `Mermaid source is too large. Maximum allowed length: ${MAX_MERMAID_LENGTH}.`;
+  }
+
+  if (!Array.isArray(mermaidElementIds) || !mermaidElementIds.every((id) => typeof id === "string")) {
+    return "Mermaid element IDs must be an array of strings.";
   }
 
   return null;
@@ -116,8 +129,17 @@ app.http("saveScene", {
       const topic = String(body?.topic || "").trim();
       const elements = body?.elements;
       const appState = body?.appState || null;
+      const mermaid = typeof body?.mermaid === "string" ? body.mermaid : "";
+      const mermaidElementIds = Array.isArray(body?.mermaidElementIds)
+        ? body.mermaidElementIds
+        : [];
 
-      const validationError = validateScene(topic, elements);
+      const validationError = validateScene(
+        topic,
+        elements,
+        mermaid,
+        mermaidElementIds,
+      );
 
       if (validationError) {
         return {
@@ -151,6 +173,8 @@ app.http("saveScene", {
         createdAt: previousScene?.createdAt || now,
         updatedAt: now,
         elements,
+        mermaid,
+        mermaidElementIds,
         appState,
         owner: {
           identityProvider: user.identityProvider,

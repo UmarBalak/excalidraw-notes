@@ -12,18 +12,6 @@ type SceneSummary = {
   updatedAt: string;
 };
 
-// The AI only ever reads/writes these types. Anything else on the canvas
-// (freedraw strokes, lines, pasted images, frames) is invisible to it and
-// must be preserved separately across every Generate call, or it gets
-// silently dropped when the scene is replaced with the AI's response.
-const AI_MANAGED_TYPES = new Set([
-  "text",
-  "rectangle",
-  "ellipse",
-  "diamond",
-  "arrow",
-]);
-
 export default function App() {
   const currentPath = window.location.pathname;
 
@@ -232,77 +220,6 @@ function LandingPage() {
   );
 }
 
-// Strips a live Excalidraw scene down to the same lightweight skeleton shape
-// the AI itself produces, so it can be sent back as context for edits.
-// Only AI-manageable types are included — foreign types (freedraw, line,
-// image, frame) are handled entirely outside this function; the AI never
-// needs to know they exist.
-function simplifySceneForPrompt(elements: readonly any[]) {
-  const visible = elements.filter(
-    (el) => !el.isDeleted && AI_MANAGED_TYPES.has(el.type),
-  );
-  const boundTextByContainer = new Map<string, string>();
-
-  visible.forEach((el) => {
-    if (el.type === "text" && el.containerId) {
-      boundTextByContainer.set(el.containerId, el.text);
-    }
-  });
-
-  return visible
-    .filter((el) => !(el.type === "text" && el.containerId))
-    .map((el) => {
-      const item: Record<string, unknown> = { id: el.id, type: el.type };
-
-      for (const property of [
-        "backgroundColor",
-        "strokeColor",
-        "fillStyle",
-        "strokeWidth",
-        "strokeStyle",
-        "roughness",
-        "strokeLineDash",
-        "role",
-        "layer",
-        "group",
-        "semanticKind",
-        "visualStyle",
-        "relationshipType",
-      ]) {
-        if (el[property] !== undefined) {
-          item[property] = el[property];
-        }
-      }
-
-      // Arrows are positioned by their start/end bindings, not x/y —
-      // including x/y for them is meaningless and was leaking NaN -> null
-      // into the payload. Every other type still needs a real position.
-      if (el.type !== "arrow") {
-        item.x = Number.isFinite(el.x) ? Math.round(el.x) : 0;
-        item.y = Number.isFinite(el.y) ? Math.round(el.y) : 0;
-      }
-
-      if (Number.isFinite(el.width)) item.width = Math.round(el.width);
-      if (Number.isFinite(el.height)) item.height = Math.round(el.height);
-      if (el.type === "text") {
-        item.text = el.text;
-        if (el.fontSize) item.fontSize = el.fontSize;
-      }
-
-      if (el.type === "arrow") {
-        const startId = el.startBinding?.elementId;
-        const endId = el.endBinding?.elementId;
-        if (startId) item.startBinding = { elementId: startId };
-        if (endId) item.endBinding = { elementId: endId };
-      }
-
-      const boundText = boundTextByContainer.get(el.id);
-      if (boundText) item.label = { text: boundText };
-
-      return item;
-    });
-}
-
 function EditorPage() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
@@ -316,6 +233,10 @@ function EditorPage() {
   // empty, never pre-filled with the topic, or the topic name itself gets
   // sent to the AI as an instruction the moment you hit Generate.
   const [instruction, setInstruction] = useState("");
+  // Mermaid is the source of truth for the AI-managed part of the canvas.
+  // The IDs let us replace only that part while preserving freeform work.
+  const [mermaidSource, setMermaidSource] = useState("");
+  const [generatedElementIds, setGeneratedElementIds] = useState<string[]>([]);
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [loadingScene, setLoadingScene] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -352,8 +273,21 @@ function EditorPage() {
               theme: savedAppState.theme,
             },
           });
+
+          setMermaidSource(
+            typeof scene.mermaid === "string" ? scene.mermaid : "",
+          );
+          setGeneratedElementIds(
+            Array.isArray(scene.mermaidElementIds)
+              ? scene.mermaidElementIds.filter(
+                  (id: unknown): id is string => typeof id === "string",
+                )
+              : [],
+          );
         } else {
           excalidrawAPI.resetScene();
+          setMermaidSource("");
+          setGeneratedElementIds([]);
         }
 
         setTopic(selectedTopic);
@@ -394,14 +328,16 @@ function EditorPage() {
 
     try {
       const rawElements = excalidrawAPI.getSceneElements();
-      const existingElements = simplifySceneForPrompt(rawElements);
 
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ topic: targetInstruction, existingElements }),
+        body: JSON.stringify({
+          topic: targetInstruction,
+          existingMermaid: mermaidSource,
+        }),
       });
 
       const responseText = await response.text();
@@ -432,31 +368,47 @@ function EditorPage() {
         throw new Error(message);
       }
 
-      if (!Array.isArray(responseBody)) {
-        throw new Error("Generation returned an invalid element list.");
+      if (
+        typeof responseBody !== "object" ||
+        responseBody === null ||
+        !("mermaid" in responseBody) ||
+        typeof responseBody.mermaid !== "string"
+      ) {
+        throw new Error("Generation returned invalid Mermaid code.");
       }
 
-      const skeleton = responseBody as Parameters<
-        typeof convertToExcalidrawElements
-      >[0];
+      const nextMermaid = responseBody.mermaid.trim();
+      if (!nextMermaid) {
+        throw new Error("Generation returned an empty Mermaid diagram.");
+      }
 
-      // Anything the AI can't represent (freedraw, lines, images, frames)
-      // never went into the request above and must be spliced back in here
-      // — otherwise a full scene replace below would wipe it out.
+      // Layout is deliberately delegated to Mermaid. Excalidraw receives
+      // concrete elements only after the deterministic local conversion.
+      const { parseMermaidToExcalidraw } = await import(
+        "@excalidraw/mermaid-to-excalidraw"
+      );
+      const mermaidResult = await parseMermaidToExcalidraw(nextMermaid);
+      if (!mermaidResult.elements.length) {
+        throw new Error("Mermaid did not produce any diagram elements.");
+      }
+
+      const aiElementIdSet = new Set(generatedElementIds);
       const preservedElements = rawElements.filter(
-        (el) => !el.isDeleted && !AI_MANAGED_TYPES.has(el.type),
+        (el) => !el.isDeleted && !aiElementIdSet.has(el.id),
       );
 
-      const aiElements = convertToExcalidrawElements(skeleton, {
-        regenerateIds: false,
+      const aiElements = convertToExcalidrawElements(mermaidResult.elements, {
+        regenerateIds: true,
       });
 
       excalidrawAPI.updateScene({
         elements: [...preservedElements, ...aiElements],
       });
+      setMermaidSource(nextMermaid);
+      setGeneratedElementIds(aiElements.map((element) => element.id));
       setSaveMessage(
-        existingElements.length
-          ? "Edited — click Save to keep this"
+        mermaidSource
+          ? "Updated — click Save to keep this"
           : "Generated — click Save to keep this",
       );
 
@@ -488,6 +440,8 @@ function EditorPage() {
         body: JSON.stringify({
           topic: topic.trim(),
           elements: excalidrawAPI.getSceneElements(),
+          mermaid: mermaidSource,
+          mermaidElementIds: generatedElementIds,
           appState: {
             viewBackgroundColor: currentAppState.viewBackgroundColor,
             gridSize: currentAppState.gridSize,
@@ -552,9 +506,9 @@ function EditorPage() {
         />
 
         <span style={{ fontSize: 11, opacity: 0.6 }}>
-          {excalidrawAPI && excalidrawAPI.getSceneElements().length > 0
-            ? "Ask for a change (e.g. remove the arrow to Database)"
-            : "Describe the diagram to generate"}
+          {mermaidSource
+            ? "Describe an AI diagram update (Mermaid manages the layout)"
+            : "Describe a diagram to generate with AI"}
         </span>
         <form
           className="editor-ai-form"
@@ -567,7 +521,7 @@ function EditorPage() {
             className="editor-topic-input"
             value={instruction}
             onChange={(event) => setInstruction(event.target.value)}
-            placeholder="Describe a diagram or a change..."
+            placeholder="Describe a diagram or requested change..."
             maxLength={180}
             disabled={generating}
           />
