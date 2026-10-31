@@ -417,15 +417,76 @@ PATTERNS.cycle = {
 // ------------------------------------------------------------------
 // 5. EDGES: port selection + fan-out slots (this is what removes crossings)
 // ------------------------------------------------------------------
-function choosePorts(a, b, dir, kind) {
-  const ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2;
-  const hOv = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-  const vOv = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-  if (kind === "feedback" || kind === "skip") return dir === "LR" ? ["bottom", "bottom"] : ["right", "right"];
-  if (vOv > 0 && hOv <= 0) return ax < bx ? ["right", "left"] : ["left", "right"];
-  if (hOv > 0 && vOv <= 0) return ay < by ? ["bottom", "top"] : ["top", "bottom"];
-  if (dir === "LR") return ax < bx ? ["right", "left"] : ["left", "right"];
-  return ay < by ? ["bottom", "top"] : ["top", "bottom"];
+function portPoint(box, side, anchor = 0.5) {
+  const a = clamp(anchor, 0.1, 0.9);
+  if (side === "left") return { x: box.x, y: box.y + box.h * a };
+  if (side === "right") return { x: box.x + box.w, y: box.y + box.h * a };
+  if (side === "top") return { x: box.x + box.w * a, y: box.y };
+  return { x: box.x + box.w * a, y: box.y + box.h };
+}
+
+function segmentHitsBox(a, b, box, padding = 10) {
+  const left = box.x - padding, right = box.x + box.w + padding;
+  const top = box.y - padding, bottom = box.y + box.h + padding;
+  // Axis-aligned orthogonal segments are sufficient for the candidate routes.
+  if (Math.abs(a.x - b.x) < 0.001) {
+    const x = a.x;
+    return x > left && x < right && Math.max(Math.min(a.y, b.y), top) < Math.min(Math.max(a.y, b.y), bottom);
+  }
+  if (Math.abs(a.y - b.y) < 0.001) {
+    const y = a.y;
+    return y > top && y < bottom && Math.max(Math.min(a.x, b.x), left) < Math.min(Math.max(a.x, b.x), right);
+  }
+  return false;
+}
+
+function routeObstructionCount(points, boxes, sourceId, targetId) {
+  let hits = 0;
+  for (const [id, box] of boxes) {
+    if (id === sourceId || id === targetId) continue;
+    for (let i = 0; i < points.length - 1; i++) {
+      if (segmentHitsBox(points[i], points[i + 1], box)) { hits++; break; }
+    }
+  }
+  return hits;
+}
+
+/*
+ * Select ports from actual geometry, not only the diagram's global direction.
+ * This matters for composite diagrams where a connection may travel vertically
+ * between regions even when each region is laid out left-to-right.
+ */
+function choosePorts(a, b, dir, kind, boxes, fromId, toId) {
+  if (kind === "feedback" || kind === "skip") {
+    return dir === "LR" ? ["bottom", "bottom"] : ["right", "right"];
+  }
+  const sides = ["left", "right", "top", "bottom"];
+  const normals = {
+    left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
+    top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }
+  };
+  let best = null;
+  for (const fromSide of sides) for (const toSide of sides) {
+    const p1 = portPoint(a, fromSide), p2 = portPoint(b, toSide);
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const length = Math.abs(dx) + Math.abs(dy);
+    const n1 = normals[fromSide], n2 = normals[toSide];
+    const sourceDot = dx * n1.x + dy * n1.y;
+    const targetDot = -dx * n2.x - dy * n2.y;
+    const directionPenalty = (sourceDot < 0 ? 260 : 0) + (targetDot < 0 ? 260 : 0);
+    const horizontalFirst = [p1, { x: p2.x, y: p1.y }, p2];
+    const verticalFirst = [p1, { x: p1.x, y: p2.y }, p2];
+    const obstacles = Math.min(
+      routeObstructionCount(horizontalFirst, boxes, fromId, toId),
+      routeObstructionCount(verticalFirst, boxes, fromId, toId)
+    );
+    const preferredAxisPenalty = dir === "LR"
+      ? ((fromSide === "top" || fromSide === "bottom") ? 10 : 0)
+      : ((fromSide === "left" || fromSide === "right") ? 10 : 0);
+    const score = length + directionPenalty + obstacles * 900 + preferredAxisPenalty;
+    if (!best || score < best.score) best = { score, fromSide, toSide };
+  }
+  return [best.fromSide, best.toSide];
 }
 
 /* spread edges that share a port along that side, ordered by the other end's position */
@@ -437,8 +498,8 @@ function assignAnchors(edges, boxes) {
     const side = key.split(":")[1];
     const vertical = side === "left" || side === "right";
     const other = (it) => { const b = boxes.get(it.end === "from" ? it.e.to : it.e.from); return vertical ? b.y + b.h / 2 : b.x + b.w / 2; };
-    list.sort((p, q) => other(p) - other(q));
-    list.forEach((it, i) => { it.e[it.end === "from" ? "fromAnchor" : "toAnchor"] = list.length === 1 ? 0.5 : 0.2 + (0.6 * i) / (list.length - 1); });
+    list.sort((p, q) => other(p) - other(q) || String(p.e.from).localeCompare(String(q.e.from)) || String(p.e.to).localeCompare(String(q.e.to)));
+    list.forEach((it, i) => { it.e[it.end === "from" ? "fromAnchor" : "toAnchor"] = list.length === 1 ? 0.5 : 0.14 + (0.72 * i) / (list.length - 1); });
   }
 }
 
@@ -603,7 +664,7 @@ function specToOperations(rawSpec) {
   edges.forEach((e) => {
     if (out.back && out.back.has(`${e.from}>${e.to}`)) e.kind = "feedback";
     e.kind = e.kind || "flow";
-    const [fs, ts] = choosePorts(boxes.get(e.from), boxes.get(e.to), dir, e.kind);
+    const [fs, ts] = choosePorts(boxes.get(e.from), boxes.get(e.to), dir, e.kind, boxes, e.from, e.to);
     e.fromSide = fs; e.toSide = ts;
   });
   assignAnchors(edges, boxes);
@@ -641,7 +702,7 @@ function specToOperations(rawSpec) {
     add({
       id: `edge-${i}-${e.from}-${e.to}`.slice(0, 80), kind: "relationship", type: "arrow", from: e.from, to: e.to,
       relationshipType: e.relationshipType || REL[e.kind] || "leads_to",
-      label: e.label && e.label.length <= 14 ? e.label : undefined,
+      label: e.label && e.label.length <= 24 ? e.label : undefined,
       edgeKind: e.kind, fromSide: e.fromSide, toSide: e.toSide, fromAnchor: e.fromAnchor, toAnchor: e.toAnchor,
       route: out.straight ? "straight" : "orthogonal"
     });
