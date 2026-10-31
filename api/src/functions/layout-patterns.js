@@ -417,76 +417,15 @@ PATTERNS.cycle = {
 // ------------------------------------------------------------------
 // 5. EDGES: port selection + fan-out slots (this is what removes crossings)
 // ------------------------------------------------------------------
-function portPoint(box, side, anchor = 0.5) {
-  const a = clamp(anchor, 0.1, 0.9);
-  if (side === "left") return { x: box.x, y: box.y + box.h * a };
-  if (side === "right") return { x: box.x + box.w, y: box.y + box.h * a };
-  if (side === "top") return { x: box.x + box.w * a, y: box.y };
-  return { x: box.x + box.w * a, y: box.y + box.h };
-}
-
-function segmentHitsBox(a, b, box, padding = 10) {
-  const left = box.x - padding, right = box.x + box.w + padding;
-  const top = box.y - padding, bottom = box.y + box.h + padding;
-  // Axis-aligned orthogonal segments are sufficient for the candidate routes.
-  if (Math.abs(a.x - b.x) < 0.001) {
-    const x = a.x;
-    return x > left && x < right && Math.max(Math.min(a.y, b.y), top) < Math.min(Math.max(a.y, b.y), bottom);
-  }
-  if (Math.abs(a.y - b.y) < 0.001) {
-    const y = a.y;
-    return y > top && y < bottom && Math.max(Math.min(a.x, b.x), left) < Math.min(Math.max(a.x, b.x), right);
-  }
-  return false;
-}
-
-function routeObstructionCount(points, boxes, sourceId, targetId) {
-  let hits = 0;
-  for (const [id, box] of boxes) {
-    if (id === sourceId || id === targetId) continue;
-    for (let i = 0; i < points.length - 1; i++) {
-      if (segmentHitsBox(points[i], points[i + 1], box)) { hits++; break; }
-    }
-  }
-  return hits;
-}
-
-/*
- * Select ports from actual geometry, not only the diagram's global direction.
- * This matters for composite diagrams where a connection may travel vertically
- * between regions even when each region is laid out left-to-right.
- */
-function choosePorts(a, b, dir, kind, boxes, fromId, toId) {
-  if (kind === "feedback" || kind === "skip") {
-    return dir === "LR" ? ["bottom", "bottom"] : ["right", "right"];
-  }
-  const sides = ["left", "right", "top", "bottom"];
-  const normals = {
-    left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
-    top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }
-  };
-  let best = null;
-  for (const fromSide of sides) for (const toSide of sides) {
-    const p1 = portPoint(a, fromSide), p2 = portPoint(b, toSide);
-    const dx = p2.x - p1.x, dy = p2.y - p1.y;
-    const length = Math.abs(dx) + Math.abs(dy);
-    const n1 = normals[fromSide], n2 = normals[toSide];
-    const sourceDot = dx * n1.x + dy * n1.y;
-    const targetDot = -dx * n2.x - dy * n2.y;
-    const directionPenalty = (sourceDot < 0 ? 260 : 0) + (targetDot < 0 ? 260 : 0);
-    const horizontalFirst = [p1, { x: p2.x, y: p1.y }, p2];
-    const verticalFirst = [p1, { x: p1.x, y: p2.y }, p2];
-    const obstacles = Math.min(
-      routeObstructionCount(horizontalFirst, boxes, fromId, toId),
-      routeObstructionCount(verticalFirst, boxes, fromId, toId)
-    );
-    const preferredAxisPenalty = dir === "LR"
-      ? ((fromSide === "top" || fromSide === "bottom") ? 10 : 0)
-      : ((fromSide === "left" || fromSide === "right") ? 10 : 0);
-    const score = length + directionPenalty + obstacles * 900 + preferredAxisPenalty;
-    if (!best || score < best.score) best = { score, fromSide, toSide };
-  }
-  return [best.fromSide, best.toSide];
+function choosePorts(a, b, dir, kind) {
+  const ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2;
+  const hOv = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const vOv = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  if (kind === "feedback" || kind === "skip") return dir === "LR" ? ["bottom", "bottom"] : ["right", "right"];
+  if (vOv > 0 && hOv <= 0) return ax < bx ? ["right", "left"] : ["left", "right"];
+  if (hOv > 0 && vOv <= 0) return ay < by ? ["bottom", "top"] : ["top", "bottom"];
+  if (dir === "LR") return ax < bx ? ["right", "left"] : ["left", "right"];
+  return ay < by ? ["bottom", "top"] : ["top", "bottom"];
 }
 
 /* spread edges that share a port along that side, ordered by the other end's position */
@@ -498,8 +437,8 @@ function assignAnchors(edges, boxes) {
     const side = key.split(":")[1];
     const vertical = side === "left" || side === "right";
     const other = (it) => { const b = boxes.get(it.end === "from" ? it.e.to : it.e.from); return vertical ? b.y + b.h / 2 : b.x + b.w / 2; };
-    list.sort((p, q) => other(p) - other(q) || String(p.e.from).localeCompare(String(q.e.from)) || String(p.e.to).localeCompare(String(q.e.to)));
-    list.forEach((it, i) => { it.e[it.end === "from" ? "fromAnchor" : "toAnchor"] = list.length === 1 ? 0.5 : 0.14 + (0.72 * i) / (list.length - 1); });
+    list.sort((p, q) => other(p) - other(q));
+    list.forEach((it, i) => { it.e[it.end === "from" ? "fromAnchor" : "toAnchor"] = list.length === 1 ? 0.5 : 0.2 + (0.6 * i) / (list.length - 1); });
   }
 }
 
@@ -664,7 +603,7 @@ function specToOperations(rawSpec) {
   edges.forEach((e) => {
     if (out.back && out.back.has(`${e.from}>${e.to}`)) e.kind = "feedback";
     e.kind = e.kind || "flow";
-    const [fs, ts] = choosePorts(boxes.get(e.from), boxes.get(e.to), dir, e.kind, boxes, e.from, e.to);
+    const [fs, ts] = choosePorts(boxes.get(e.from), boxes.get(e.to), dir, e.kind);
     e.fromSide = fs; e.toSide = ts;
   });
   assignAnchors(edges, boxes);
@@ -702,7 +641,7 @@ function specToOperations(rawSpec) {
     add({
       id: `edge-${i}-${e.from}-${e.to}`.slice(0, 80), kind: "relationship", type: "arrow", from: e.from, to: e.to,
       relationshipType: e.relationshipType || REL[e.kind] || "leads_to",
-      label: e.label && e.label.length <= 24 ? e.label : undefined,
+      label: e.label && e.label.length <= 14 ? e.label : undefined,
       edgeKind: e.kind, fromSide: e.fromSide, toSide: e.toSide, fromAnchor: e.fromAnchor, toAnchor: e.toAnchor,
       route: out.straight ? "straight" : "orthogonal"
     });
@@ -762,14 +701,18 @@ For UI requests, use this open-ended composition schema rather than choosing fro
 }
 
 Composition rules:
-1. Choose a reusable visual grammar from the meaning/structure, not the topic name. These patterns are foundations, not an exhaustive list.
-2. Choose composite for hybrid diagrams with multiple regions, parallel subsystems, or distinct local flow structures. The model can define arbitrary region labels and relative row/column positions. Every node must belong to exactly one region.
-3. Choose wireframe for actual interface layouts; compose arbitrary regions from generic UI primitives. Do not assume every UI has a preexisting template.
-4. Use only semantically valid nodes and connections. Avoid invented components and decorative arrows.
-5. Keep labels compact. Put explanations in notes rather than long node labels. Include the mechanisms and detail explicitly requested by the user.
-6. For grouped patterns, every node must belong to exactly one group. IDs must be unique after slug normalization.
-7. If none of the supported diagram grammars fits, return {"pattern":"freeform"}; the caller will use the full Canvas IR prompt.
-8. Return JSON only, no markdown or explanation outside it.
+1. Infer the deliverable from intent words and semantics, not prompt length. Requests under 10 words are valid: a bare topic means a focused conceptual overview; architecture/workflow means components plus relationships; compare means comparable alternatives; explain/teach means a structured explanatory visual. Do not ask for clarification solely because a prompt is short.
+2. Choose a reusable visual grammar from the meaning/structure, not the topic name. These patterns are foundations, not an exhaustive list; never hardcode a topic-to-layout mapping.
+3. For article, guide, tutorial, or broad explanatory requests, organise content into a few meaningful sections. Use composite for mixed section structures and parallel subsystems. Use concise cards/notes for explanations, and diagrams only where they add explanatory value. Do not force a long article into one giant flowchart.
+4. For long prompts, preserve explicit requirements and named entities. Identify the central idea, major sections, relationships, examples and caveats before composing. Do not silently omit requested detail or repeat the same idea across cards.
+5. Choose composite for hybrid diagrams with multiple regions, parallel subsystems, or distinct local flow structures. The model can define arbitrary region labels and relative row/column positions. Every node must belong to exactly one region.
+6. Choose wireframe for actual interface layouts; compose arbitrary regions from generic UI primitives. Do not assume every UI has a preexisting template.
+7. Use only semantically valid nodes and connections. Every edge must express a real data, control, dependency, sequence, or feedback relationship. Avoid invented components and decorative arrows.
+8. Establish a clear global reading order, section hierarchy, balanced region placement, and sufficient whitespace. Keep related material close; minimise unnecessary cross-region connections.
+9. Keep node labels compact. Put explanations in notes rather than long node labels. Adapt detail to available space; prefer several focused explanatory units over one overloaded card.
+10. For grouped patterns, every node must belong to exactly one group. IDs must be unique after slug normalization.
+11. If none of the supported diagram grammars fits, return {"pattern":"freeform"}; the caller will use the full Canvas IR prompt.
+12. Return JSON only, no markdown or explanation outside it.
 `;
 }
 

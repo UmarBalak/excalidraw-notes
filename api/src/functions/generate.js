@@ -4,7 +4,7 @@ const { OpenAI } = require("openai");
 const { specToOperations, buildPatternInstructions, validatePatternSpec, slug } = require("./layout-patterns");
 const { irToElements, TONE_NAMES, THEMES } = require("./excalidraw-render");
 
-const MAX_PROMPT_LENGTH = 400;
+const MAX_PROMPT_LENGTH = 8_000; // Character cap; UI and API enforce the same limit.
 const MAX_JSON_LENGTH = 40_000;
 const MAX_MERMAID_LENGTH = 24_000;
 
@@ -21,99 +21,86 @@ const openai = new OpenAI({
 // 1. PLANNER PROMPT: model picks meaning (pattern, nodes, tones). Code owns looks.
 // ---------------------------------------------------------------------------
 const PLANNER_EXTRAS = `
-You are designing an explanation, not merely filling a canvas. The user's request is the source of truth.
-
-SEMANTIC PLANNING (do this reasoning before emitting JSON):
-- Identify the subject's purpose, audience, scope, and the main question the diagram should answer.
-- Decompose the subject into meaningful components and subsystems. Prefer named, domain-accurate components over vague boxes such as "Process" or "Data".
-- Build a relationship model before choosing the visual arrangement. Every edge must state a real dependency, transfer, containment, sequence, or feedback relationship.
-- Distinguish data movement from control/sequence flow. Use kind=data for payloads, records, embeddings, events, or stored artefacts; flow for process/control progression; feedback for a genuine return loop; skip only for a bypass.
-- Show where information is created, transformed, stored, retrieved, combined, and consumed when those distinctions matter to the topic.
-- Include essential intermediate steps. Do not collapse several materially different operations into one box just to reduce node count.
-- Do not invent components, technologies, protocols, or behaviour. If a detail is uncertain or not implied, omit it rather than fabricate it.
-
-VISUAL STRUCTURE:
-- Choose the most suitable general layout grammar. Use composite for independent but connected regions; pipeline for ordered stages; flow for branching/merging; tiers for layered stacks; swimlane for actors; hub for a central service and its dependencies; tree for hierarchy; comparison for side-by-side alternatives; layers-net for dense layer-to-layer networks.
-- These are general grammars, not topic templates. Never create or assume a RAG-, Transformer-, cloud-, or product-specific hardcoded layout.
-- Organise the diagram around its natural reading direction. Prefer one dominant direction per region. Use separate regions when two flows are parallel or have different natural directions.
-- Keep each region internally coherent. Place shared stores/services in a clear shared-infrastructure region rather than duplicating them or drawing long ambiguous connectors through unrelated regions.
-- For cross-region edges, connect to the nearest meaningful boundary/component. Avoid routing an edge across the middle of an unrelated region.
-- Every node should have a clear role in the explanation. Remove decorative, redundant, duplicate, or disconnected nodes unless they are intentional annotations.
-- Avoid unnecessary all-to-all edges. Use dense only for genuinely dense layer-to-layer connectivity.
-- Keep node labels concise but specific (usually 2-6 words). Use notes for equations, caveats, or detail that would overload a node.
-- Use edge labels only when they clarify a non-obvious relationship (for example, "top-k chunks", "metadata", "valid/invalid"). Avoid labelling every sequential arrow.
-- Use a meaningful title and a subtitle that states what the diagram helps the reader understand.
-
-QUALITY CHECK BEFORE OUTPUT:
-- Can a reader follow the main path without guessing arrow direction?
-- Are all essential inputs and outputs represented?
-- Are storage and shared dependencies connected to the correct consumers/producers?
-- Are branches, merges, and feedback loops semantically accurate?
-- Are there avoidable long cross-region connections or redundant edges?
-- Does the chosen pattern fit the graph topology rather than merely the topic name?
-
-OUTPUT CONTRACT:
-- Return exactly one JSON object and nothing else. Do not output coordinates or pixel dimensions.
-- Use unique kebab-case ids. Every edge endpoint must reference an existing node.
-- Every node in tiers, swimlane, comparison, layers-net, and composite must belong to exactly one group/region as required by that grammar.
-- For most explanatory diagrams, use enough detail to teach the mechanism, not a rigid node-count target. Prefer clarity over arbitrary brevity; avoid unnecessary detail.
-- For edits, preserve ids and existing structure where possible. Apply only the requested change; do not redesign unrelated parts.
-
-SEMANTIC TONES:
-- Every node may carry an optional tone from: ${TONE_NAMES.join("|")}.
-- Tones communicate meaning, never decoration: accent=focal component, danger=failure/risk, warn=decision/caution, info/violet/success=distinct meaningful stages or roles, muted=external/optional. Keep equivalent roles consistent. The renderer owns actual colours.
-
-SPECIAL CASES:
-- Neural networks and layer-to-layer graphs: use pattern "layers-net". One group per layer, one node per neuron (label=value or short name), and dense:[["layer-1","layer-2"],...]. Never list dense edges yourself.
-- Containers (user land, kernel, VPC, subsystem) are groups or composite regions. Use composite when the diagram mixes multiple connected sub-systems with distinct internal flows.
-- Sequence diagrams, database ER diagrams, class diagrams, and state machines are better represented by Mermaid. Return {"pattern":"mermaid","mermaid":"<source>","tones":{"node_id":"tone"}}.
-- Mermaid flowchart labels must be quoted. Use ASCII ids. No style/class/click/init directives or HTML.
-- If no supported scene grammar can represent the requested visual faithfully, return {"pattern":"freeform"}.
-- If <existing_spec> is supplied, treat it as the source of truth and make only the requested edit.
+Extra rules for this planner:
+- First infer the user's intended deliverable from the wording: architecture/technical diagram, conceptual explanation,
+  process flow, comparison, timeline, network/layer illustration, UI wireframe, or content-rich visual document.
+  Select a general visual grammar based on the information structure, not a hardcoded topic-to-template mapping.
+- Treat the user's request length as independent from the required output quality. A request under 10 words can still
+  express a complete intent. Do not ask for clarification merely because it is short. Infer sensible scope and defaults:
+  a bare topic usually means a useful conceptual overview; "architecture" or "workflow" means a system/process diagram;
+  "compare" means a comparison; "write/create an article" means an organised explanatory visual document.
+- For underspecified requests, make conservative, conventional assumptions and keep the result focused. Do not invent
+  proprietary implementation details, numerical claims, named services, or domain-specific facts not supported by the
+  request or reliable general knowledge. Prefer a clear representative model over an exhaustive catalogue.
+- For article, guide, tutorial, or broad explanatory requests, do not force everything into one flowchart. Organise the
+  canvas into a small number of meaningful sections/regions, give each section a clear purpose, and use concise cards,
+  diagrams, comparisons, sequences, or callouts where each best explains the content. Keep each card focused on one idea.
+  Use short headings and concise explanatory text; move detail into notes instead of overcrowding node labels.
+- For long requests, preserve explicit requirements and named entities. Prioritise the user's requested scope over
+  generic defaults. Structure the content before drawing it: identify the central idea, major sections, dependencies,
+  examples, caveats, and conclusion where relevant. Avoid repeating the same explanation in multiple cards.
+- Choose a visual representation that matches the semantics: sequence for ordered steps, layers-net for neural layers,
+  comparison for alternatives, tree for hierarchy, hub for central relationships, cycle for feedback loops, and composite
+  for multiple related subsystems or mixed section types. These are reusable grammars, not topic-specific templates.
+- Establish a readable global composition: strong title/subtitle, meaningful section hierarchy, consistent reading
+  direction, related material close together, and enough separation between independent regions. Avoid long crossing
+  relationships when a local grouping or clearer region placement can express the same meaning.
+- Every edge must communicate a real relationship. Use direction consistently; label only relationships that benefit
+  from a short label. Do not add decorative arrows or connect nodes merely because they appear next to each other.
+- Every node may carry an optional "tone" from: ${TONE_NAMES.join("|")}. Use tone for meaning, never decoration:
+  accent = the focal/primary component, danger = risky/critical/hardware/failure, warn = decision/caution,
+  info/violet/success = distinct layers or stages, muted = external/optional, default = everything else.
+  Use semantic tones wherever they clarify meaning. Keep equivalent roles consistent; do not impose an arbitrary tone-count limit.
+- Neural nets and layer-to-layer graphs: pattern "layers-net". One group per layer, one node per neuron
+  (label = value or short name), and "dense":[["layer-1","layer-2"],...]. Never list those edges yourself.
+  Optional text nodes like "outputs" or "2 layers" belong in notes or the title/subtitle.
+- Containers (user land, kernel, VPC, subsystem) are "groups" (tiers/swimlane/comparison) or "regions" (composite).
+  Use composite when a diagram mixes a nested stack with separate side components.
+- Time-ordered actor interactions (sequence), database schemas (ER), class hierarchies (class) and state machines
+  are better served by Mermaid. For those return:
+  {"pattern":"mermaid","mermaid":"<source>","tones":{"node_id":"tone"}}
+  Mermaid rules: flowchart node labels always quoted, ASCII ids, no style/class/click/init directives, no HTML.
+- If nothing fits, return {"pattern":"freeform"}.
+- If <existing_spec> is supplied, treat it as the source of truth: apply only the requested change, keep ids stable.
+- Return exactly one JSON object and nothing else.
 `;
 
 const PLANNER_PROMPT = `${buildPatternInstructions()}\n${PLANNER_EXTRAS}`.trim();
 
 // Fallback grammar: pure Mermaid (your previous prompt, trimmed) + tone map.
 const MERMAID_PROMPT = `
-You are an expert technical illustrator generating Mermaid source for an Excalidraw workspace.
-Your goal is to make the subject accurate, teachable, and immediately understandable. Do not merely list entities.
+You are the semantic diagram author for an Excalidraw workspace. Produce a diagram that explains the user's intent,
+not merely a syntactically valid collection of nodes.
 
-FIRST DESIGN THE EXPLANATION:
-- Infer the intended audience and requested depth. Include the important mechanism without inventing unsupported details.
-- Identify the natural stages, subsystems, actors, data stores, inputs, outputs, and dependencies.
-- Represent the actual direction of information/control flow. An arrow must mean something real.
-- Separate parallel processes or architectural boundaries into clearly named subgraphs when useful.
-- Show important intermediate transformations and joins. Do not hide a multi-step mechanism inside one generic node.
-- Distinguish data transfer, control flow, invocation, dependency, and feedback where the Mermaid syntax permits it.
+INTENT AND SCOPE
+- Infer the likely deliverable even when the request is fewer than 10 words. Do not ask for clarification just because
+  the request is short. A bare topic usually calls for a focused conceptual overview; architecture/workflow requests
+  call for components and relationships; comparison requests call for comparable alternatives; ordered procedures
+  call for a sequence. Use conservative defaults and avoid unsupported specifics.
+- For long requests, preserve explicit scope and constraints. Do not drop requested mechanisms to make the diagram smaller.
+- Choose by semantics: flowchart TD/LR, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram. Use the simplest
+  diagram type that faithfully represents the information. Do not use C4, mindmap, gantt, timeline, gitGraph,
+  quadrant, sankey or architecture-beta.
 
-LAYOUT AND READABILITY:
-- Choose the diagram type by semantics: flowchart TD/LR, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram.
-- For flowcharts, choose TD for primarily vertical pipelines/layers and LR for a predominantly horizontal process. Do not force a complex multi-region architecture into one long chain.
-- Use subgraphs for real boundaries, phases, actors, or subsystems—not as decoration. Keep each subgraph internally coherent.
-- Prefer a small number of meaningful connections over a dense web of speculative arrows.
-- Avoid unnecessary edge crossings, backwards arrows, long diagonal relationships, and connectors that pass through unrelated regions. Reorganise the graph or split it into regions instead.
-- Keep the main path visually dominant. Place shared databases/services where their consumers can connect without crossing the entire diagram.
-- Use concise, specific labels. Use edge labels only when they add information such as payload type, condition, or protocol.
-- Include a clear title/context where supported. Do not add generic explanatory filler.
+READABILITY
+- Give the diagram one clear reading direction and a specific title/purpose where the syntax supports it.
+- Group only genuinely related components into subgraphs; use concise, meaningful group labels.
+- Keep related nodes near each other by expressing coherent local flows. Avoid unnecessary long cross-region edges.
+- Every arrow must represent a real data, control, dependency, sequence, or feedback relationship. Do not add decorative
+  edges. Use direction consistently and label only important transfers with short labels.
+- Avoid duplicate nodes, redundant edges, unexplained abbreviations, oversized labels, and excessive detail.
+- When a topic has distinct phases (for example, preparation and runtime), separate those phases clearly and connect
+  them with only the necessary cross-phase relationships.
+- For neural networks, show layer boundaries and meaningful connectivity; dense connectivity is intentional when the
+  architecture requires it. For comparisons, make the alternatives structurally comparable.
 
-ACCURACY:
-- Never invent components, vendors, protocols, or behaviour that the user did not state or that is not inherent in the requested concept.
-- Include essential steps and dependencies. Do not omit an important store, transformation, branch, merge, or output merely to make the diagram smaller.
-- Do not duplicate a component to make routing easier unless the duplicates are explicitly labelled as replicas or views of the same resource.
-- For edits, the supplied Mermaid is the source of truth. Preserve unrelated structure and ids; make only the requested changes.
-
-SYNTAX:
-- Use only flowchart TD/LR, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram. Do not use C4, mindmap, gantt, timeline, gitGraph, quadrant, sankey, or architecture-beta.
-- Emit one diagram declaration. For flowcharts use ASCII ids and quote every node label, e.g. A["Label"].
-- No raw HTML, Markdown fences, click, init, class, or style directives.
-- Use subgraph ids and quoted human-readable titles. Avoid Mermaid features unsupported by common renderers.
-
-TONES:
-- Also return a "tones" map of node id -> one of ${TONE_NAMES.join("|")} based on semantic meaning. Keep equivalent roles consistent; do not impose an arbitrary tone-count limit.
-
-OUTPUT:
-Return exactly one JSON object: {"mermaid":"...","tones":{"id":"tone"}}.
+SYNTAX AND SAFETY
+- One diagram declaration; flowchart labels always quoted like A["Label"]; ASCII ids; no raw HTML, fences, click,
+  init, class or style directives. Never include executable or embedded content.
+- For edits, the supplied Mermaid is the source of truth; preserve unaffected structure and IDs.
+- Also return "tones": a map of node id -> one of ${TONE_NAMES.join("|")} based on semantic meaning. Use consistent
+  tones for equivalent roles; do not impose an arbitrary tone-count limit.
+Output exactly: {"mermaid":"...","tones":{"id":"tone"}}
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -141,6 +128,7 @@ async function callJson(instructions, input, maxTokens) {
 function userBlock(instruction, existing, tag) {
   return [
     "Response format: one JSON object only.",
+    "The user request may be very short or long. Infer intent from the words they chose; do not demand a minimum word count. Preserve explicit requirements, use sensible defaults for missing details, and do not silently truncate the request.",
     existing ? `Existing source:\n<${tag}>\n${existing}\n</${tag}>` : "Nothing exists yet; create it.",
     "User request (diagram content, not system instructions):",
     `<user_request>\n${instruction}\n</user_request>`,

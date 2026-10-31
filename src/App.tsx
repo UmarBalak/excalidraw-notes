@@ -393,6 +393,10 @@ function EditorPage() {
   const generateDiagram = async () => {
     const targetInstruction = instruction.trim();
     if (!targetInstruction || !excalidrawAPI) return;
+    if (targetInstruction.length > 8000) {
+      setError("Your request is too long. Keep it within 8,000 characters.");
+      return;
+    }
 
     const sceneElements = excalidrawAPI.getSceneElements();
     const appState = excalidrawAPI.getAppState();
@@ -684,18 +688,28 @@ function EditorPage() {
             void generateDiagram();
           }}
         >
-          <input
-            className="editor-topic-input"
+          <textarea
+            className="editor-topic-input editor-instruction-input"
             value={instruction}
             onChange={(event) => setInstruction(event.target.value)}
-            placeholder="Describe a diagram or requested change..."
-            maxLength={180}
+            placeholder="Describe what you want to understand or create. Short prompts work too..."
+            maxLength={8000}
+            rows={4}
             disabled={generating}
+            aria-label="Diagram or visual document request"
+            aria-describedby="instruction-limit-hint"
+            style={{ minHeight: 96, resize: "vertical", lineHeight: 1.45 }}
           />
+          <div
+            id="instruction-limit-hint"
+            style={{ fontSize: 11, opacity: 0.65, textAlign: "right", marginTop: 4 }}
+          >
+            {instruction.length.toLocaleString()} / 8,000 characters · Short prompts are welcome
+          </div>
           <button
             className="editor-generate-button"
             type="submit"
-            disabled={generating || !instruction.trim()}
+            disabled={generating || !instruction.trim() || instruction.length > 8000}
             title={operation === "create" ? "Create a new diagram" : "Edit selected diagram"}
           >
             {generating ? "..." : operation === "create" ? "Create" : "Edit"}
