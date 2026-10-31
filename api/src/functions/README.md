@@ -1,41 +1,56 @@
-# Excalidraw visual-composition and AI-panel update
+# Excalidraw AI — Modal Workspace UI Fix
+
+This update fixes the AI workspace interaction and layout. The AI experience is now opened from a compact floating **AI** launcher instead of being rendered as a large inline section above the canvas.
 
 ## What changed
 
-### Visual representation selection
-- The planner now distinguishes diagrams from non-sequential visual explanations.
-- Two-way comparisons should use the existing `comparison` grammar: two aligned columns, comparable rows, concise text boxes, and no arrows unless a real relationship needs one.
-- Concept summaries, pros/cons, key-point collections, and comparisons with more than two alternatives can use the new general-purpose `cards` grammar.
-- `cards` lays out independent explanatory boxes in a 1–3 column grid. It is a reusable visual grammar, not a topic-specific template.
-- Mermaid is no longer the universal fallback. It is used only when the planner explicitly selects Mermaid, or when editing an existing Mermaid diagram. If a specialised planner response is invalid or returns `freeform`, the backend asks for a text-card composition instead.
+### 1. Toolbar-style launcher
+- A compact sparkle/AI action is positioned near the top-left Excalidraw menu area.
+- Clicking it opens the AI workspace modal.
+- The Excalidraw canvas remains full-size behind the overlay; it is not pushed down or resized.
 
-### AI panel UI
-- Reworked the AI panel into a clearer visual workspace: workspace name, saved-workspace selector, create/edit switch, multiline prompt, character count, action buttons, examples, and contextual help.
-- Added isolated styles in `AIWorkspacePanel.css`; the existing `App.css` remains part of the user's application and is not replaced.
-- The UI explains that the AI chooses the representation and that new diagrams remain independent from existing canvas content.
+### 2. Viewport-bounded modal
+- Centered overlay with a maximum width of 1,160 px and height of 780 px.
+- Uses viewport-relative sizing and internal scrolling. It cannot extend past the viewport.
+- Backdrop click and Escape close the modal (unless generation is in progress).
+- Explicit close button; overlay content receives pointer events normally.
+- Responsive stacked layout for narrow screens.
 
-### Prompt length
-- Request cap remains **8,000 characters** in both UI and Azure Function.
-- Short prompts (including fewer than 10 words) are explicitly valid. The planner is instructed to infer a focused, conventional intent rather than demand more words.
-- Requests over the cap are rejected; they are not silently truncated.
+### 3. Two-pane workflow
+- Left: create/edit mode, conversation messages, examples, prompt composer and character counter.
+- Right: preview pane with an approximate SVG rendering of generated Excalidraw shapes, text and connectors.
+- Workspace name, saved-workspace picker and save action are tucked into Workspace settings.
+- New Chat resets the current draft and pending result.
 
-## Files to integrate
-- `App.tsx` — updated AI workspace UI.
-- `AIWorkspacePanel.css` — new stylesheet; add alongside `App.tsx`.
-- `generate.js` — planner intent rules, cards fallback, Mermaid selection policy, and 8,000-character API limit.
-- `layout-patterns.js` — generic `cards` layout grammar and prompt schema updates.
-- `excalidraw-render.js` — unchanged.
-- `wireframe-kit.js` — unchanged.
-- `saveScene.js`, `getScene.js` — unchanged persistence layer.
+### 4. Explicit Insert step
+Generation no longer changes the canvas immediately. The result is staged in the modal first. The user can review it and choose **Insert on canvas**. Only then are elements added (or the explicitly selected diagram replaced in edit mode). This preserves the user's existing canvas until they confirm insertion.
 
-Keep the existing `App.css` and import it as before. Ensure the Azure Function deployment includes `generate.js`, `layout-patterns.js`, `excalidraw-render.js`, and `wireframe-kit.js` in the same module directory.
+### 5. Existing behavior retained
+- Existing `/api/generate`, `/api/saveScene`, `/api/getScene` contracts are unchanged.
+- 8,000-character prompt cap and short-prompt support remain.
+- Create and edit semantics remain; edit still requires a selection from a tracked generated visual.
+- Existing visual representation planner, layout grammars, renderer, theme logic and scene persistence are retained.
 
-## Validation performed
-- `node --check` passed for all JavaScript runtime files.
-- `test-visual-representation.js` passed: comparison uses two aligned groups and no generated arrows; generic cards render as independent text boxes; 8,000-character cap is exported and checked.
-- `test-layout-quality.js` passed: generic pipeline and composite layout smoke tests, relationship endpoint integrity, and unique IDs.
-- `test-content-aware-prompts.js` passed: short-prompt and long-form guidance plus input-limit contract.
-- `test-generate-api-contract.js` passed with mocked dependencies: 3-word prompt accepted, 8,000 characters accepted, 8,001 rejected before model call.
-- `App.tsx` passed TypeScript TSX transpilation.
+## Files
 
-Not run: live Azure OpenAI calls, deployed Azure Functions integration, browser interaction, screenshot regression, or full project type-check/build. A legacy `test-layout-patterns.js` fixture from the earlier package was removed because it exercised an outdated wireframe schema; current-schema smoke coverage is in `test-layout-quality.js` and `test-visual-representation.js`.
+- `App.tsx` — modal launcher, dialog workflow, staged generation and Insert action.
+- `AIWorkspacePanel.css` — isolated launcher/modal styling and responsive behavior.
+- `generate.js`, `excalidraw-render.js`, `layout-patterns.js`, `wireframe-kit.js` — retained from the previous content-aware release.
+- `saveScene.js`, `getScene.js` — retained scene persistence endpoints.
+- `test-*.js`, `TEST_RESULTS.md` — automated checks.
+
+## Integration
+
+1. Replace your current `App.tsx` with this version.
+2. Add `AIWorkspacePanel.css` beside `App.tsx`.
+3. Keep your existing `App.css` file. It is intentionally not replaced by this patch because it contains the rest of your app and Excalidraw shell styling.
+4. Keep the backend and renderer files from this package in their corresponding existing locations; do not create duplicate API routes.
+5. Run the tests listed in `TEST_RESULTS.md`, then test the toolbar action and Insert flow in your deployed app.
+
+The launcher is a fixed overlay action at `left: 64px`, `top: 14px` to sit beside Excalidraw's menu without covering the central tool dock. If your own top navigation occupies that exact area, adjust only `.ai-launcher` positioning in the CSS.
+
+## Preview limitation
+The modal preview is an approximate SVG rendering of the generated element geometry, not a second live Excalidraw editor. The inserted elements are the complete original editable Excalidraw elements. Some Excalidraw-specific details (rough strokes, bindings, custom fonts, image assets and frame clipping) may look different in the simplified preview.
+
+## Not claimed
+No live browser automation, deployed Azure Functions test, full project type-check, or visual regression test was run in this environment. See `TEST_RESULTS.md` for the checks that were actually executed.

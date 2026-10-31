@@ -23,6 +23,15 @@ type GeneratedDiagram = {
 };
 
 
+type PendingVisual = {
+  elements: any[];
+  diagram: GeneratedDiagram;
+  replacedIds: string[];
+  operation: "create" | "edit";
+};
+
+type ChatMessage = { role: "user" | "assistant"; text: string };
+
 type SemanticTone = {
   stroke: string;
   fill: string;
@@ -278,6 +287,55 @@ function LandingPage() {
   );
 }
 
+function DiagramPreview({ elements }: { elements: any[] }) {
+  const visible = elements.filter((element) => !element.isDeleted);
+  if (!visible.length) return null;
+  const minX = Math.min(...visible.map((element) => element.x || 0));
+  const minY = Math.min(...visible.map((element) => element.y || 0));
+  const maxX = Math.max(...visible.map((element) => (element.x || 0) + Math.max(element.width || 0, 1)));
+  const maxY = Math.max(...visible.map((element) => (element.y || 0) + Math.max(element.height || 0, 1)));
+  const width = Math.max(maxX - minX, 1);
+  const height = Math.max(maxY - minY, 1);
+  const pad = Math.max(Math.max(width, height) * 0.035, 18);
+  const wrapText = (value: string, maxChars: number) => {
+    const words = value.split(/\s+/);
+    const lines: string[] = [];
+    let line = "";
+    words.forEach((word) => {
+      const next = line ? `${line} ${word}` : word;
+      if (line && next.length > maxChars) { lines.push(line); line = word; }
+      else line = next;
+    });
+    if (line) lines.push(line);
+    return lines.slice(0, 8);
+  };
+
+  return (
+    <svg className="ai-preview-svg" viewBox={`${minX - pad} ${minY - pad} ${width + pad * 2} ${height + pad * 2}`} role="img" aria-label="Approximate preview of the generated Excalidraw visual">
+      <defs><marker id="ai-preview-arrowhead" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#737783" strokeWidth="1" /></marker></defs>
+      {visible.filter((element) => element.type === "arrow" || element.type === "line").map((element) => {
+        const points = Array.isArray(element.points) && element.points.length > 1
+          ? element.points.map((point: number[]) => `${(element.x || 0) + point[0]},${(element.y || 0) + point[1]}`).join(" ")
+          : `${element.x || 0},${element.y || 0} ${(element.x || 0) + (element.width || 0)},${(element.y || 0) + (element.height || 0)}`;
+        return <polyline key={element.id} points={points} fill="none" stroke={element.strokeColor || "#737783"} strokeWidth={Math.max(element.strokeWidth || 1.5, 1)} markerEnd={element.type === "arrow" ? "url(#ai-preview-arrowhead)" : undefined} />;
+      })}
+      {visible.filter((element) => ["rectangle", "ellipse", "diamond"].includes(element.type)).map((element) => {
+        const x = element.x || 0, y = element.y || 0, w = Math.max(element.width || 1, 1), h = Math.max(element.height || 1, 1);
+        const fill = element.backgroundColor && element.backgroundColor !== "transparent" ? element.backgroundColor : "#ffffff";
+        const stroke = element.strokeColor || "#555966";
+        if (element.type === "ellipse") return <ellipse key={element.id} cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} fill={fill} stroke={stroke} strokeWidth={Math.max(element.strokeWidth || 1.5, 1)} />;
+        if (element.type === "diamond") return <polygon key={element.id} points={`${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`} fill={fill} stroke={stroke} strokeWidth={Math.max(element.strokeWidth || 1.5, 1)} />;
+        return <rect key={element.id} x={x} y={y} width={w} height={h} rx="8" fill={fill} stroke={stroke} strokeWidth={Math.max(element.strokeWidth || 1.5, 1)} />;
+      })}
+      {visible.filter((element) => element.type === "text" && typeof element.text === "string").map((element) => {
+        const fontSize = Math.max(Math.min(element.fontSize || 16, 30), 8);
+        const lines = wrapText(element.text, Math.max(8, Math.floor((element.width || 120) / (fontSize * 0.58))));
+        return <text key={element.id} x={element.x || 0} y={(element.y || 0) + fontSize} fill={element.strokeColor || "#343741"} fontSize={fontSize} fontFamily="Arial, sans-serif" textAnchor={element.textAlign === "center" ? "middle" : "start"}>{lines.map((line, index) => <tspan key={index} x={element.textAlign === "center" ? (element.x || 0) + (element.width || 0) / 2 : element.x || 0} dy={index === 0 ? 0 : fontSize * 1.25}>{line}</tspan>)}</text>;
+      })}
+    </svg>
+  );
+}
+
 function EditorPage() {
   const [excalidrawAPI, setExcalidrawAPI] =
     useState<ExcalidrawImperativeAPI | null>(null);
@@ -301,6 +359,10 @@ function EditorPage() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("Click Save to sync");
   const [error, setError] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [pendingVisual, setPendingVisual] = useState<PendingVisual | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [showWorkspaceSettings, setShowWorkspaceSettings] = useState(false);
 
   const refreshScenes = () => {
     fetch("/api/listScenes")
@@ -391,6 +453,15 @@ function EditorPage() {
     refreshScenes();
   }, [excalidrawAPI, initialTopic]);
 
+  useEffect(() => {
+    if (!aiOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !generating) setAiOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [aiOpen, generating]);
+
   const generateDiagram = async () => {
     const targetInstruction = instruction.trim();
     if (!targetInstruction || !excalidrawAPI) return;
@@ -420,6 +491,8 @@ function EditorPage() {
 
     setGenerating(true);
     setError("");
+    setPendingVisual(null);
+    setChatMessages((messages) => [...messages, { role: "user", text: targetInstruction }]);
 
     try {
       const requestBody: Record<string, unknown> = {
@@ -548,39 +621,57 @@ function EditorPage() {
 
       // Create appends. Edit replaces only the explicitly selected diagram.
       const replacedIds = operation === "edit" && targetDiagram
-        ? new Set(targetDiagram.elementIds)
-        : new Set<string>();
-      const preserved = sceneElements.filter(
-        (el) => !el.isDeleted && !replacedIds.has(el.id),
-      );
+        ? targetDiagram.elementIds
+        : [];
 
-      const nextDiagrams = operation === "edit" && targetDiagram
-        ? diagrams.map((diagram) => diagram.id === targetDiagram.id ? nextDiagram : diagram)
-        : [...diagrams, nextDiagram];
-
-      excalidrawAPI.updateScene({
-        elements: [...preserved, ...positioned],
-        appState: {
-          selectedElementIds: Object.fromEntries(newIds.map((id) => [id, true])),
-        },
+      setPendingVisual({
+        elements: positioned,
+        diagram: nextDiagram,
+        replacedIds,
+        operation,
       });
-      setDiagrams(nextDiagrams);
-      setSaveMessage(
-        operation === "edit"
-          ? "Updated diagram — click Save to keep this"
-          : "Added a new diagram — click Save to keep this",
-      );
+      setChatMessages((messages) => [...messages, {
+        role: "assistant",
+        text: `${positioned.length} elements generated. Review the preview, then insert it onto your canvas.`,
+      }]);
       setInstruction("");
     } catch (generationError) {
       console.error("[API] POST /api/generate failed", generationError);
-      setError(
-        generationError instanceof Error
-          ? generationError.message
-          : "Unable to generate diagram.",
-      );
+      const message = generationError instanceof Error
+        ? generationError.message
+        : "Unable to generate diagram.";
+      setError(message);
+      setChatMessages((messages) => [...messages, { role: "assistant", text: `Generation failed: ${message}` }]);
     } finally {
       setGenerating(false);
     }
+  };
+
+  const insertPendingVisual = () => {
+    if (!excalidrawAPI || !pendingVisual) return;
+    const sceneElements = excalidrawAPI.getSceneElements();
+    const replacedIds = new Set(pendingVisual.replacedIds);
+    const preserved = sceneElements.filter((element) => !element.isDeleted && !replacedIds.has(element.id));
+    const nextDiagrams = pendingVisual.operation === "edit"
+      ? diagrams.map((diagram) => diagram.id === pendingVisual.diagram.id ? pendingVisual.diagram : diagram)
+      : [...diagrams, pendingVisual.diagram];
+    const ids = pendingVisual.elements.map((element) => element.id);
+    excalidrawAPI.updateScene({
+      elements: [...preserved, ...pendingVisual.elements],
+      appState: { selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])) },
+    });
+    setDiagrams(nextDiagrams);
+    setSaveMessage(pendingVisual.operation === "edit" ? "Updated visual — save to keep it" : "Visual added — save to keep it");
+    setPendingVisual(null);
+    setAiOpen(false);
+  };
+
+  const startNewChat = () => {
+    setInstruction("");
+    setError("");
+    setPendingVisual(null);
+    setChatMessages([]);
+    setOperation("create");
   };
 
   const saveScene = async () => {
@@ -631,107 +722,124 @@ function EditorPage() {
 
   return (
     <div className={`editor-shell theme--${theme}`}>
-      <section className="editor-ai-panel ai-workspace-panel" aria-label="AI visual workspace">
-        <div className="ai-panel-topbar">
-          <div className="ai-panel-brand">
-            <span className="ai-panel-mark" aria-hidden="true">✦</span>
-            <div>
-              <div className="editor-ai-title">Visual workspace</div>
-              <p className="ai-panel-subtitle">Turn ideas into diagrams, comparisons, explanations and visual documents.</p>
-            </div>
-          </div>
-          <div className="ai-panel-status" role="status">{saveMessage}</div>
-        </div>
+      <button
+        type="button"
+        className="ai-launcher"
+        onClick={() => setAiOpen(true)}
+        aria-label="Open AI visual workspace"
+        title="Create with AI"
+      >
+        <span aria-hidden="true">✦</span><span>AI</span>
+      </button>
 
-        <div className="ai-panel-workspace-row">
-          <label className="ai-field ai-workspace-field">
-            <span className="ai-field-label">Workspace</span>
-            <input
-              className="editor-topic-input ai-text-input"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              placeholder="Name this workspace"
-              maxLength={180}
-              disabled={generating}
-            />
-          </label>
-          <label className="ai-field ai-open-field">
-            <span className="ai-field-label">Open saved workspace</span>
-            <select
-              className="editor-scene-picker ai-select"
-              value={scenes.some((scene) => scene.topic === topic) ? topic : ""}
-              onChange={(event) => { if (event.target.value) loadScene(event.target.value); }}
-              disabled={loadingScene || generating}
-              aria-label="Open saved workspace"
-            >
-              <option value="">{scenes.length ? "Choose a workspace…" : "No saved workspaces yet"}</option>
-              {scenes.map((scene) => <option key={scene.topic} value={scene.topic}>{scene.topic}</option>)}
-            </select>
-          </label>
-        </div>
-
-        <div className="ai-prompt-area">
-          <div className="ai-prompt-heading">
-            <div>
-              <div className="ai-field-label">What would you like to create?</div>
-              <p className="ai-prompt-hint">Use a few words or a detailed brief. The AI chooses the visual format that fits.</p>
-            </div>
-            <div className="ai-operation-switch" role="group" aria-label="Generation action">
-              <button type="button" className={operation === "create" ? "ai-operation-option is-active" : "ai-operation-option"}
-                onClick={() => setOperation("create")} disabled={generating}>Create new</button>
-              <button type="button" className={operation === "edit" ? "ai-operation-option is-active" : "ai-operation-option"}
-                onClick={() => setOperation("edit")} disabled={generating}>Edit selection</button>
-            </div>
-          </div>
-
-          <form className="editor-ai-form ai-prompt-form" onSubmit={(event) => { event.preventDefault(); void generateDiagram(); }}>
-            <textarea
-              className="editor-topic-input editor-instruction-input ai-prompt-input"
-              value={instruction}
-              onChange={(event) => setInstruction(event.target.value)}
-              placeholder={'Try “Compare LLMs and SLMs”, “Explain RAG”, or “Design a Kubernetes architecture”…'}
-              maxLength={8000}
-              rows={4}
-              disabled={generating}
-              aria-label="Describe what you want to create"
-              aria-describedby="instruction-limit-hint"
-            />
-            <div className="ai-prompt-footer">
-              <div className="ai-prompt-meta">
-                <span id="instruction-limit-hint">{instruction.length.toLocaleString()} / 8,000 characters</span>
-                <span className="ai-prompt-meta-dot">·</span>
-                <span>Short prompts are welcome</span>
+      {aiOpen && (
+        <div className="ai-modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !generating) setAiOpen(false);
+        }}>
+          <section className="ai-modal" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
+            <header className="ai-modal-header">
+              <div className="ai-modal-heading">
+                <span className="ai-panel-mark" aria-hidden="true">✦</span>
+                <div>
+                  <h2 id="ai-modal-title">Text to visual</h2>
+                  <p>Describe an idea. The AI chooses the right visual format.</p>
+                </div>
               </div>
-              <div className="ai-prompt-actions">
-                <button className="editor-save-button ai-save-button" type="button" onClick={() => void saveScene()}
-                  disabled={saving || loadingScene || !topic.trim()} title="Save workspace">
-                  {saving ? "Saving…" : "Save workspace"}
-                </button>
-                <button className="editor-generate-button ai-generate-button" type="submit"
-                  disabled={generating || !instruction.trim() || instruction.length > 8000}
-                  title={operation === "create" ? "Create a new visual" : "Edit the selected visual"}>
-                  {generating ? <><span className="ai-button-spinner" aria-hidden="true" /> Working…</> : operation === "create" ? "✦ Create visual" : "✎ Apply edit"}
-                </button>
+              <div className="ai-modal-header-actions">
+                <button type="button" className="ai-secondary-button" onClick={startNewChat} disabled={generating}>＋ New chat</button>
+                <button type="button" className="ai-icon-button" onClick={() => setShowWorkspaceSettings((value) => !value)} aria-label="Workspace settings" title="Workspace settings">⚙</button>
+                <button type="button" className="ai-icon-button" onClick={() => setAiOpen(false)} disabled={generating} aria-label="Close AI workspace" title="Close">×</button>
               </div>
+            </header>
+
+            {showWorkspaceSettings && (
+              <div className="ai-workspace-settings">
+                <label className="ai-field">
+                  <span className="ai-field-label">Workspace name</span>
+                  <input className="ai-text-input" value={topic} onChange={(event) => setTopic(event.target.value)} maxLength={180} />
+                </label>
+                <label className="ai-field">
+                  <span className="ai-field-label">Open saved workspace</span>
+                  <select className="ai-select" value={scenes.some((scene) => scene.topic === topic) ? topic : ""}
+                    onChange={(event) => { if (event.target.value) { loadScene(event.target.value); setAiOpen(false); } }} disabled={loadingScene || generating}>
+                    <option value="">Choose a workspace…</option>
+                    {scenes.map((scene) => <option key={scene.topic} value={scene.topic}>{scene.topic}</option>)}
+                  </select>
+                </label>
+                <button className="ai-secondary-button" type="button" onClick={() => void saveScene()} disabled={saving || !topic.trim()}>{saving ? "Saving…" : "Save workspace"}</button>
+              </div>
+            )}
+
+            <div className="ai-modal-body">
+              <div className="ai-chat-pane">
+                <div className="ai-chat-toolbar">
+                  <div className="ai-operation-switch" role="group" aria-label="Generation action">
+                    <button type="button" className={operation === "create" ? "ai-operation-option is-active" : "ai-operation-option"} onClick={() => setOperation("create")} disabled={generating}>Create new</button>
+                    <button type="button" className={operation === "edit" ? "ai-operation-option is-active" : "ai-operation-option"} onClick={() => setOperation("edit")} disabled={generating}>Edit selection</button>
+                  </div>
+                  <span className="ai-usage-status">{saveMessage}</span>
+                </div>
+                <div className="ai-chat-messages" aria-live="polite">
+                  {chatMessages.length === 0 ? (
+                    <div className="ai-empty-state">
+                      <div className="ai-empty-icon">✦</div>
+                      <h3>What are we creating today?</h3>
+                      <p>Try a short idea or describe exactly what you need. Comparisons, diagrams, explanations and visual documents are all supported.</p>
+                      <div className="ai-prompt-examples">
+                        {["Compare LLMs and SLMs", "Explain transformers", "RAG architecture", "Write an article on inference engineering"].map((example) => (
+                          <button key={example} type="button" className="ai-example-chip" disabled={generating} onClick={() => setInstruction(example)}>{example}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : chatMessages.map((message, index) => (
+                    <div key={`${index}-${message.role}`} className={`ai-chat-message is-${message.role}`}>
+                      <span className="ai-message-avatar">{message.role === "user" ? "You" : "✦ AI"}</span>
+                      <p>{message.text}</p>
+                    </div>
+                  ))}
+                  {generating && <div className="ai-generating-line"><span className="ai-button-spinner" /> Thinking through the best visual structure…</div>}
+                  {error && <div className="ai-inline-error" role="alert">{error}</div>}
+                </div>
+                <form className="ai-composer" onSubmit={(event) => { event.preventDefault(); void generateDiagram(); }}>
+                  <textarea value={instruction} onChange={(event) => setInstruction(event.target.value)}
+                    placeholder={operation === "edit" ? "Describe what to change in the selected visual…" : "Describe the visual you want to create…"}
+                    maxLength={8000} rows={3} disabled={generating} aria-label="Describe what you want to create" />
+                  <div className="ai-composer-footer">
+                    <span>{instruction.length.toLocaleString()} / 8,000</span>
+                    <button type="submit" className="ai-send-button" disabled={generating || !instruction.trim()}>{generating ? "Generating…" : "Generate ↗"}</button>
+                  </div>
+                </form>
+              </div>
+
+              <aside className="ai-preview-pane">
+                <div className="ai-preview-heading">
+                  <div><h3>Canvas preview</h3><p>{pendingVisual ? "Review before inserting" : "Your generated visual will appear here"}</p></div>
+                  {pendingVisual && <span className="ai-ready-pill">Ready</span>}
+                </div>
+                {pendingVisual ? (
+                  <div className="ai-preview-content">
+                    <div className="ai-preview-artboard">
+                      <div className="ai-preview-mini-title">{pendingVisual.diagram.kind === "mermaid" ? "Diagram preview" : "Visual composition"}</div>
+                      <DiagramPreview elements={pendingVisual.elements} />
+                    </div>
+                    <div className="ai-preview-stats"><span>{pendingVisual.elements.length} elements</span><span>{pendingVisual.elements.filter((element) => element.type === "arrow").length} connectors</span></div>
+                    <p className="ai-preview-note">Preview is an approximate rendering for review. Insert to place the complete editable Excalidraw elements on your canvas.</p>
+                  </div>
+                ) : (
+                  <div className="ai-preview-placeholder"><div className="ai-placeholder-sparkle">✧</div><strong>Nothing generated yet</strong><span>Enter a prompt and generate. You can review the result here before adding it to the canvas.</span></div>
+                )}
+              </aside>
             </div>
-          </form>
-
-          <div className="ai-prompt-examples" aria-label="Prompt examples">
-            <span className="ai-examples-label">Try:</span>
-            {["Compare LLMs and SLMs", "Explain transformers", "RAG architecture", "Write an article on inference engineering"].map((example) => (
-              <button key={example} type="button" className="ai-example-chip" disabled={generating}
-                onClick={() => setInstruction(example)}>{example}</button>
-            ))}
-          </div>
-          <p className="ai-mode-hint">
-            {operation === "edit"
-              ? "Select an element inside the visual you want to change, then describe the edit."
-              : "New visuals are added independently. Existing canvas content stays untouched. Mermaid is used only when a diagram benefits from it."}
-          </p>
+            <footer className="ai-modal-footer">
+              <span className="ai-footer-hint">{pendingVisual ? "Your existing canvas stays untouched until you insert." : "Short prompts welcome · Maximum 8,000 characters"}</span>
+              <div className="ai-footer-actions">
+                <button type="button" className="ai-secondary-button" onClick={() => setAiOpen(false)} disabled={generating}>Close</button>
+                <button type="button" className="ai-insert-button" onClick={insertPendingVisual} disabled={!pendingVisual || generating}>Insert on canvas <span>→</span></button>
+              </div>
+            </footer>
+          </section>
         </div>
-
-        {error && <p className="editor-ai-error ai-panel-error" role="alert">{error}</p>}
-      </section>
+      )}
 
       <Excalidraw
         excalidrawAPI={(api) => setExcalidrawAPI(api)}
