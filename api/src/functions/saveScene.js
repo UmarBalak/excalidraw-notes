@@ -6,6 +6,9 @@ const CONTAINER_ID = "Scenes";
 const MAX_TOPIC_LENGTH = 180;
 const MAX_ELEMENTS = 5000;
 const MAX_MERMAID_LENGTH = 24000;
+const MAX_GENERATED_DIAGRAMS = 100;
+const MAX_GENERATED_DIAGRAM_SOURCE_LENGTH = 24000;
+const MAX_GENERATED_DIAGRAM_IDS = 5000;
 
 function getAuthenticatedUser(request) {
   const encodedPrincipal = request.headers.get("x-ms-client-principal");
@@ -70,7 +73,7 @@ function getScenesContainer() {
   return client.database(DATABASE_ID).container(CONTAINER_ID);
 }
 
-function validateScene(topic, elements, mermaid, mermaidElementIds) {
+function validateScene(topic, elements, mermaid, mermaidElementIds, generatedDiagrams) {
   if (!topic) {
     return "A workspace topic is required.";
   }
@@ -103,6 +106,37 @@ function validateScene(topic, elements, mermaid, mermaidElementIds) {
     return "Mermaid element IDs must be an array of strings.";
   }
 
+  if (!Array.isArray(generatedDiagrams)) {
+    return "Generated diagrams must be an array.";
+  }
+
+  if (generatedDiagrams.length > MAX_GENERATED_DIAGRAMS) {
+    return `Too many generated diagrams. Maximum allowed: ${MAX_GENERATED_DIAGRAMS}.`;
+  }
+
+  for (const diagram of generatedDiagrams) {
+    if (!diagram || typeof diagram !== "object" || Array.isArray(diagram)) {
+      return "Each generated diagram must be an object.";
+    }
+    if (typeof diagram.id !== "string" || !diagram.id || diagram.id.length > 128) {
+      return "Each generated diagram must have a valid ID.";
+    }
+    if (!["mermaid", "scene"].includes(diagram.kind)) {
+      return "Generated diagram kind must be mermaid or scene.";
+    }
+    if (typeof diagram.source !== "string" || diagram.source.length > MAX_GENERATED_DIAGRAM_SOURCE_LENGTH) {
+      return "Generated diagram source is invalid or too large.";
+    }
+    if (!Array.isArray(diagram.elementIds) ||
+        diagram.elementIds.length > MAX_GENERATED_DIAGRAM_IDS ||
+        !diagram.elementIds.every((id) => typeof id === "string" && id.length <= 128)) {
+      return "Generated diagram element IDs are invalid.";
+    }
+    if (diagram.spec != null && (typeof diagram.spec !== "object" || Array.isArray(diagram.spec))) {
+      return "Generated diagram spec must be an object or null.";
+    }
+  }
+
   return null;
 }
 
@@ -133,12 +167,17 @@ app.http("saveScene", {
       const mermaidElementIds = Array.isArray(body?.mermaidElementIds)
         ? body.mermaidElementIds
         : [];
+      // Older clients do not send generatedDiagrams. Keep them compatible.
+      const generatedDiagrams = Array.isArray(body?.generatedDiagrams)
+        ? body.generatedDiagrams
+        : [];
 
       const validationError = validateScene(
         topic,
         elements,
         mermaid,
         mermaidElementIds,
+        generatedDiagrams,
       );
 
       if (validationError) {
@@ -175,6 +214,7 @@ app.http("saveScene", {
         elements,
         mermaid,
         mermaidElementIds,
+        generatedDiagrams,
         appState,
         owner: {
           identityProvider: user.identityProvider,

@@ -1,42 +1,42 @@
-# Excalidraw AI Layer — Native Arrow Binding Fix
+# Excalidraw AI diagram lifecycle patch
 
-## Files
+## Changed files
+- `App.tsx`
+  - Adds explicit **Create** and **Edit selected diagram** actions.
+  - Create requests send no existing diagram source and append to the current scene.
+  - Edit requests require a selection belonging to a tracked generated diagram.
+  - Edits replace only that diagram's tracked elements and preserve its approximate canvas position.
+  - New diagram batches are positioned around the viewport centre and selected together.
+  - Mermaid skeletons receive semantic styling using renderer-owned theme tokens returned by the API.
+  - Sends `generatedDiagrams` metadata when saving, while retaining legacy `mermaid` fields.
+- `generate.js`
+  - Adds explicit operation handling. Create forcibly discards existing Mermaid/spec input.
+  - Edit requires a source and uses only that selected diagram's Mermaid or spec.
+  - Mermaid nodes receive semantic tone inference when the planner does not provide a tone.
+  - Returns the renderer's theme tokens with Mermaid style metadata.
+  - Removes the arbitrary three-tone limit from planner instructions.
+- `excalidraw-render.js`
+  - Adds semantic label/role tone inference to the IR rendering path.
 
-- `generate.js` — generation pipeline, native element normalization, arrow routing, and bidirectional bindings.
-- `layout-patterns.js` — deterministic diagram layouts and composition grammars.
-- `wireframe-kit.js` — dynamic UI wireframe composition.
-- `test-layout-patterns.js` — local layout, binding, movement, and mocked endpoint tests.
+- `saveScene.js`
+  - Validates and persists the per-diagram metadata array in Cosmos DB.
+  - Retains backwards compatibility with clients that omit the new field.
+- `getScene.js`
+  - Returns `generatedDiagrams` as an empty array for legacy records while
+    preserving the legacy Mermaid fields used by the frontend fallback.
 
-## Why this fixes the binding contract
+## Preserved files
+- `layout-patterns.js` and `wireframe-kit.js` are included unchanged. The generic dynamic layout system is retained.
 
-Current Excalidraw element bindings use `startBinding` / `endBinding` with `elementId`, normalized `fixedPoint`, and `mode` (`orbit`, `inside`, or `skip`). The connected shape must also list the arrow in its `boundElements`. The previous generator emitted only the older `focus` / `gap` fields, which is insufficient for current Excalidraw versions.
+## Integration notes / limitations
+1. The supplied files did not include the `/api/saveScene` and `/api/getScene` handlers. `App.tsx` now sends and reads a `generatedDiagrams` array, but those handlers must persist and return that property for diagram-level edit metadata to survive a reload. If the save handler uses a strict field allowlist, add `generatedDiagrams` to it.
+2. This implementation targets diagrams created after this patch. Legacy saved workspaces are loaded using the previous `mermaid` + `mermaidElementIds` fields as a single editable Mermaid diagram.
+3. Full TypeScript type-checking could not be completed in this file-only environment because React and Excalidraw packages/types are not installed here. The TSX syntax was checked independently. The two backend JavaScript files pass `node --check`.
+4. The client styling helper consumes semantic tone assignments and the exact palette tokens exported by the renderer. It is intentionally colocated in `App.tsx` because the provided files do not establish a client-importable path to the backend CommonJS renderer module.
 
-The updated generator now:
-
-1. Emits `fixedPoint` and `mode: "orbit"` on both arrow ends.
-2. Keeps legacy `focus` and `gap` aliases for older Excalidraw releases.
-3. Adds reciprocal `{ id: arrowId, type: "arrow" }` entries to each bound shape.
-4. Ensures shape `angle` and arrow `width`, `height`, `angle`, `elbowed`, arrowheads, and core native fields are present.
-5. Recalculates dimensions whenever an arrow's points are rerouted.
-6. Rebuilds reciprocal binding references after routing and on the generated scene's finalization path.
-
-## Install
-
-Keep `generate.js`, `layout-patterns.js`, and `wireframe-kit.js` in the same directory as the Azure Function. The test file is for local validation and is not required in deployment. Keep the existing `@azure/functions`, `openai`, and environment configuration.
-
-## Validate
-
-From the directory containing the files:
-
-```bash
-node --check generate.js
-node --check layout-patterns.js
-node --check wireframe-kit.js
-node test-layout-patterns.js
-```
-
-Tests mock Azure Functions and OpenAI and do not make network calls. They check native `fixedPoint` / `mode`, reciprocal `boundElements`, non-missing linear dimensions, and backend rerouting after a node move.
-
-## Frontend integration note
-
-The frontend must pass the generated element objects to Excalidraw without stripping `startBinding`, `endBinding`, `boundElements`, `fixedPoint`, or `mode`. If the frontend serializes a custom reduced shape/arrow schema or rebuilds elements while appending generated results, the bindings can still be lost there. If the updated backend's output contains these fields but dragging still does not move arrows, inspect the frontend code that calls `updateScene` / appends elements; that adapter is the remaining integration boundary.
+## Behaviour
+- Create: independent, append-only, no canvas context sent to the model.
+- Edit: selected generated diagram only.
+- Selection: all newly generated elements selected as one batch; no permanent group is created. Native Ctrl+G remains available.
+- Position: new diagrams are centred in the current viewport; edits are centred on the replaced diagram.
+- Colour: semantic roles are resolved by the renderer's light/dark theme tokens; no user palette is introduced.

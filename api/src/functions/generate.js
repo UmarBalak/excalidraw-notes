@@ -2,7 +2,7 @@ const { app } = require("@azure/functions");
 const { randomUUID } = require("crypto");
 const { OpenAI } = require("openai");
 const { specToOperations, buildPatternInstructions, validatePatternSpec, slug } = require("./layout-patterns");
-const { irToElements, TONE_NAMES } = require("./excalidraw-render");
+const { irToElements, TONE_NAMES, THEMES } = require("./excalidraw-render");
 
 const MAX_PROMPT_LENGTH = 400;
 const MAX_JSON_LENGTH = 40_000;
@@ -25,7 +25,7 @@ Extra rules for this planner:
 - Every node may carry an optional "tone" from: ${TONE_NAMES.join("|")}. Use tone for meaning, never decoration:
   accent = the focal/primary component, danger = risky/critical/hardware/failure, warn = decision/caution,
   info/violet/success = distinct layers or stages, muted = external/optional, default = everything else.
-  Use at most 3 tones in one diagram. Leave tone out when nothing needs emphasis.
+  Use semantic tones wherever they clarify meaning. Keep equivalent roles consistent; do not impose an arbitrary tone-count limit.
 - Neural nets and layer-to-layer graphs: pattern "layers-net". One group per layer, one node per neuron
   (label = value or short name), and "dense":[["layer-1","layer-2"],...]. Never list those edges yourself.
   Optional text nodes like "outputs" or "2 layers" belong in notes or the title/subtitle.
@@ -49,7 +49,7 @@ flowchart TD/LR, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram. Do n
 gitGraph, quadrant, sankey or architecture-beta. Never invent components the user did not imply.
 Syntax: one diagram declaration; flowchart labels always quoted like A["Label"]; ASCII ids; no raw HTML, fences,
 click, init, class or style directives. For edits, the supplied Mermaid is the source of truth.
-Also return "tones": a map of node id -> one of ${TONE_NAMES.join("|")} for meaningful emphasis only (max 3 tones).
+Also return "tones": a map of node id -> one of ${TONE_NAMES.join("|")} based on semantic meaning. Use consistent tones for equivalent roles; do not impose an arbitrary tone-count limit.
 Output exactly: {"mermaid":"...","tones":{"id":"tone"}}
 `.trim();
 
@@ -103,17 +103,44 @@ function cleanMermaid(raw) {
   return normalizeFlowchartLabels(mermaid);
 }
 
-// [{id,label,tone}] so the client can color Mermaid output by id or label.
-function mermaidStyles(mermaid, tones) {
-  const valid = Object.entries(tones && typeof tones === "object" ? tones : {}).filter(([, t]) => TONE_NAMES.includes(t));
-  const labels = new Map();
-  for (const m of mermaid.matchAll(/([A-Za-z][A-Za-z0-9_-]*)\s*[\[\(\{]+"?([^"\]\)\}\r\n]+)"?[\]\)\}]+/g)) labels.set(m[1], m[2]);
-  return valid.map(([id, tone]) => ({ id, label: labels.get(id) || id, tone }));
+// Derive semantic roles from node labels when the planner does not provide
+// an explicit tone. The renderer remains the sole owner of actual colours.
+function inferSemanticTone(label) {
+  const value = String(label || "").toLowerCase();
+  if (/error|fail|exception|invalid|denied|critical|attack|threat/.test(value)) return "danger";
+  if (/decision|condition|branch|check|validate|approval|warning|risk/.test(value)) return "warn";
+  if (/database|storage|cache|repository|warehouse|persist|vector store/.test(value)) return "violet";
+  if (/success|complete|response|output|result|healthy|approved/.test(value)) return "success";
+  if (/external|third.party|vendor|optional|legacy|internet/.test(value)) return "muted";
+  if (/input|source|client|user|request|event|sensor/.test(value)) return "info";
+  if (/process|service|worker|compute|model|transform|controller|engine/.test(value)) return "accent";
+  return "default";
 }
 
-function mermaidResult(parsed) {
+function mermaidStyles(mermaid, tones) {
+  const explicit = tones && typeof tones === "object" ? tones : {};
+  const labels = new Map();
+  for (const m of mermaid.matchAll(/([A-Za-z][A-Za-z0-9_-]*)\s*[\[\(\{]+"?([^"\]\)\}\r\n]+)"?[\]\)\}]+/g)) {
+    labels.set(m[1], m[2]);
+  }
+  return [...labels.entries()].map(([id, label]) => ({
+    id,
+    label,
+    tone: TONE_NAMES.includes(explicit[id]) ? explicit[id] : inferSemanticTone(label),
+  }));
+}
+
+function mermaidResult(parsed, themeName = "dark") {
   const mermaid = cleanMermaid(parsed.mermaid);
-  return { kind: "mermaid", mermaid, styles: mermaidStyles(mermaid, parsed.tones) };
+  const theme = THEMES[themeName] || THEMES.dark;
+  return {
+    kind: "mermaid",
+    mermaid,
+    styles: mermaidStyles(mermaid, parsed.tones),
+    // Renderer-owned tokens keep client-side Mermaid styling in sync with IR.
+    themeTones: theme.tones,
+    themeEdges: { edge: theme.edge, text: theme.text },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,18 +163,34 @@ function sceneResult(spec, theme) {
 // ---------------------------------------------------------------------------
 // 5. Orchestration
 // ---------------------------------------------------------------------------
-async function createDiagram({ topic, existingMermaid, existingSpec, theme }) {
-  // Editing Mermaid output stays on the Mermaid path.
-  if (existingMermaid) {
-    const parsed = await callJson(MERMAID_PROMPT, userBlock(topic, existingMermaid, "existing_mermaid"), 4_000);
-    return mermaidResult(parsed);
+async function createDiagram({ operation = "create", topic, existingMermaid, existingSpec, theme }) {
+  // Creation is always independent. Existing canvas/source data is only
+  // considered when the caller explicitly requests an edit.
+  if (operation === "create") {
+    existingMermaid = "";
+    existingSpec = null;
+  }
+
+  if (operation === "edit" && !existingMermaid && !existingSpec) {
+    throw new Error("Editing requires the source of the selected diagram.");
+  }
+
+  // Editing Mermaid output stays on the Mermaid path. Create requests never
+  // reach this branch because their existing source was cleared above.
+  if (operation === "edit" && existingMermaid) {
+    const parsed = await callJson(
+      MERMAID_PROMPT,
+      userBlock(topic, existingMermaid, "existing_mermaid"),
+      4_000,
+    );
+    return mermaidResult(parsed, theme);
   }
 
   const existing = existingSpec ? JSON.stringify(existingSpec) : "";
   const plan = await callJson(PLANNER_PROMPT, userBlock(topic, existing, "existing_spec"), 6_000);
 
   if (plan.pattern === "mermaid" && typeof plan.mermaid === "string") {
-    try { return mermaidResult(plan); } catch { /* fall through to dedicated Mermaid call */ }
+    try { return mermaidResult(plan, theme); } catch { /* fall through to dedicated Mermaid call */ }
   }
 
   let scene = null;
@@ -158,7 +201,7 @@ async function createDiagram({ topic, existingMermaid, existingSpec, theme }) {
 
   // Planner said freeform, produced an invalid spec, or layout bailed: dedicated Mermaid call.
   const parsed = await callJson(MERMAID_PROMPT, userBlock(topic, "", "existing_mermaid"), 3_000);
-  return mermaidResult(parsed);
+  return mermaidResult(parsed, theme);
 }
 
 app.http("generate", {
@@ -193,10 +236,12 @@ app.http("generate", {
         return { status: 400, jsonBody: { error: "The existing diagram spec is too large to edit." } };
       }
 
-      const result = await createDiagram({ topic, existingMermaid, existingSpec, theme });
+      const operation = body?.operation === "edit" ? "edit" : "create";
+      const result = await createDiagram({ operation, topic, existingMermaid, existingSpec, theme });
 
       console.info("Diagram generation completed.", {
         requestId,
+        operation,
         kind: result.kind,
         pattern: result.pattern,
         elements: result.elements?.length,

@@ -68,6 +68,16 @@ function toneFor(op, ctx) {
   if (op.role === "decision" || op.style?.visual === "decision") return "warn";
   if (op.role === "external" || op.style?.visual === "external") return "muted";
   if (op.role === "hero") return "accent";
+  if (op.role === "secondary" || op.style?.visual === "secondary") return "violet";
+  if (op.role === "supporting" || op.style?.visual === "supporting") return "info";
+  const label = String(op.label || "").toLowerCase();
+  if (/error|fail|exception|invalid|denied|critical|attack|threat/.test(label)) return "danger";
+  if (/decision|condition|branch|check|validate|approval|warning|risk/.test(label)) return "warn";
+  if (/database|storage|cache|repository|warehouse|persist|vector store/.test(label)) return "violet";
+  if (/success|complete|response|output|result|healthy|approved/.test(label)) return "success";
+  if (/external|third.party|vendor|optional|legacy|internet/.test(label)) return "muted";
+  if (/input|source|client|user|request|event|sensor/.test(label)) return "info";
+  if (/process|service|worker|compute|model|transform|controller|engine/.test(label)) return "accent";
   if (group && ["tiers", "swimlane", "composite", "comparison"].includes(ctx.pattern)) {
     return CATEGORICAL[group.index % CATEGORICAL.length];
   }

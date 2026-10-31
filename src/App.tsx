@@ -12,6 +12,63 @@ type SceneSummary = {
   updatedAt: string;
 };
 
+type GeneratedDiagram = {
+  id: string;
+  kind: "mermaid" | "scene";
+  source: string;
+  spec?: Record<string, unknown> | null;
+  elementIds: string[];
+  createdAt: number;
+};
+
+
+type SemanticTone = {
+  stroke: string;
+  fill: string;
+  text: string;
+};
+
+function applyMermaidSemanticStyles(
+  skeletons: any[],
+  styles: Array<{ id: string; label?: string; tone: string }>,
+  themeTones: Record<string, SemanticTone>,
+  themeEdges: { edge: string; text: string },
+) {
+  const byId = new Map(styles.map((style) => [style.id, style.tone]));
+  const byLabel = new Map(
+    styles
+      .filter((style) => style.label)
+      .map((style) => [style.label!.trim().toLowerCase(), style.tone]),
+  );
+
+  return skeletons.map((element) => {
+    const next: any = {
+      ...element,
+      roughness: 1,
+      fontFamily: 5,
+      strokeColor: element.strokeColor || themeEdges.text,
+    };
+
+    if (["rectangle", "ellipse", "diamond"].includes(element.type)) {
+      const label = (element.label?.text || element.text || "").trim().toLowerCase();
+      const toneName = byId.get(element.id) || byLabel.get(label) || "default";
+      const tone = themeTones[toneName] || themeTones.default;
+      if (tone) {
+        next.strokeColor = tone.stroke;
+        next.backgroundColor = tone.fill;
+        next.fillStyle = "solid";
+        if (element.type === "rectangle") next.roundness = { type: 3 };
+        if (element.label) {
+          next.label = { ...element.label, fontFamily: 5, strokeColor: tone.text };
+        }
+      }
+    } else if (element.type === "arrow") {
+      next.strokeColor = themeEdges.edge;
+    }
+    return next;
+  });
+}
+
 export default function App() {
   const currentPath = window.location.pathname;
 
@@ -233,10 +290,10 @@ function EditorPage() {
   // empty, never pre-filled with the topic, or the topic name itself gets
   // sent to the AI as an instruction the moment you hit Generate.
   const [instruction, setInstruction] = useState("");
-  // Mermaid is the source of truth for the AI-managed part of the canvas.
-  // The IDs let us replace only that part while preserving freeform work.
-  const [mermaidSource, setMermaidSource] = useState("");
-  const [generatedElementIds, setGeneratedElementIds] = useState<string[]>([]);
+  // Each generated diagram owns its source and element IDs. A canvas may
+  // contain many independent AI diagrams alongside ordinary Excalidraw work.
+  const [diagrams, setDiagrams] = useState<GeneratedDiagram[]>([]);
+  const [operation, setOperation] = useState<"create" | "edit">("create");
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [loadingScene, setLoadingScene] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -274,20 +331,34 @@ function EditorPage() {
             },
           });
 
-          setMermaidSource(
-            typeof scene.mermaid === "string" ? scene.mermaid : "",
-          );
-          setGeneratedElementIds(
-            Array.isArray(scene.mermaidElementIds)
-              ? scene.mermaidElementIds.filter(
-                  (id: unknown): id is string => typeof id === "string",
-                )
-              : [],
+          const loadedIds = Array.isArray(scene.mermaidElementIds)
+            ? scene.mermaidElementIds.filter(
+                (id: unknown): id is string => typeof id === "string",
+              )
+            : [];
+          const savedDiagrams = Array.isArray(scene.generatedDiagrams)
+            ? scene.generatedDiagrams.filter(
+                (item: any) =>
+                  item && typeof item.id === "string" &&
+                  Array.isArray(item.elementIds),
+              )
+            : [];
+          setDiagrams(
+            savedDiagrams.length
+              ? savedDiagrams
+              : loadedIds.length
+                ? [{
+                    id: `legacy-${Date.now()}`,
+                    kind: "mermaid",
+                    source: typeof scene.mermaid === "string" ? scene.mermaid : "",
+                    elementIds: loadedIds,
+                    createdAt: Date.now(),
+                  }]
+                : [],
           );
         } else {
           excalidrawAPI.resetScene();
-          setMermaidSource("");
-          setGeneratedElementIds([]);
+          setDiagrams([]);
         }
 
         setTopic(selectedTopic);
@@ -323,95 +394,178 @@ function EditorPage() {
     const targetInstruction = instruction.trim();
     if (!targetInstruction || !excalidrawAPI) return;
 
+    const sceneElements = excalidrawAPI.getSceneElements();
+    const appState = excalidrawAPI.getAppState();
+    const selectedIds = new Set(
+      Object.entries(appState.selectedElementIds || {})
+        .filter(([, selected]) => selected)
+        .map(([id]) => id),
+    );
+    const targetDiagram =
+      operation === "edit"
+        ? [...diagrams].reverse().find((diagram) =>
+            diagram.elementIds.some((id) => selectedIds.has(id)),
+          )
+        : undefined;
+
+    if (operation === "edit" && !targetDiagram) {
+      setError("Select an element from the diagram you want to edit.");
+      return;
+    }
+
     setGenerating(true);
     setError("");
 
     try {
-      const rawElements = excalidrawAPI.getSceneElements();
+      const requestBody: Record<string, unknown> = {
+        operation,
+        topic: targetInstruction,
+        theme: appState.theme === "light" ? "light" : "dark",
+      };
+
+      if (operation === "edit" && targetDiagram) {
+        if (targetDiagram.kind === "mermaid") {
+          requestBody.existingMermaid = targetDiagram.source;
+        } else if (targetDiagram.spec) {
+          requestBody.existingSpec = targetDiagram.spec;
+        } else {
+          throw new Error("This saved diagram has no editable source. Create a new diagram instead.");
+        }
+        requestBody.targetDiagramId = targetDiagram.id;
+      }
 
       const response = await fetch("/api/generate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          topic: targetInstruction,
-          existingMermaid: mermaidSource,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
       });
 
       const responseText = await response.text();
-      let responseBody: unknown = responseText;
-
+      let responseBody: any = responseText;
       try {
         responseBody = responseText ? JSON.parse(responseText) : null;
       } catch (parseError) {
         console.error("[API] POST /api/generate returned invalid JSON", {
-          status: response.status,
-          parseError,
+          status: response.status, parseError,
           responseText: responseText.slice(0, 1000),
         });
       }
 
-      console.info("[API] POST /api/generate", {
-        status: response.status,
-        ok: response.ok,
-        body: responseBody,
-      });
-
       if (!response.ok) {
-        const message =
-          typeof responseBody === "object" && responseBody !== null &&
-          "error" in responseBody
-            ? String((responseBody as { error: unknown }).error)
-            : `Generation failed (${response.status})`;
-        throw new Error(message);
+        throw new Error(
+          responseBody && typeof responseBody === "object" && "error" in responseBody
+            ? String(responseBody.error)
+            : `Generation failed (${response.status})`,
+        );
       }
 
-      if (
-        typeof responseBody !== "object" ||
-        responseBody === null ||
-        !("mermaid" in responseBody) ||
-        typeof responseBody.mermaid !== "string"
+      let skeletons: any[] = [];
+      let nextDiagram: GeneratedDiagram;
+
+      if (responseBody?.kind === "scene" && Array.isArray(responseBody.elements)) {
+        skeletons = responseBody.elements;
+        nextDiagram = {
+          id: targetDiagram?.id || crypto.randomUUID(),
+          kind: "scene",
+          source: "",
+          spec: responseBody.spec || null,
+          elementIds: [],
+          createdAt: Date.now(),
+        };
+      } else if (
+        responseBody?.kind === "mermaid" &&
+        typeof responseBody.mermaid === "string"
       ) {
-        throw new Error("Generation returned invalid Mermaid code.");
+        const nextMermaid = responseBody.mermaid.trim();
+        if (!nextMermaid) throw new Error("Generation returned an empty Mermaid diagram.");
+
+        const { parseMermaidToExcalidraw } = await import(
+          "@excalidraw/mermaid-to-excalidraw"
+        );
+        const parsed = await parseMermaidToExcalidraw(nextMermaid);
+        if (!parsed.elements.length) throw new Error("Mermaid did not produce any diagram elements.");
+
+        // Apply the server's semantic tone assignments before conversion.
+        skeletons = applyMermaidSemanticStyles(
+          parsed.elements,
+          Array.isArray(responseBody.styles) ? responseBody.styles : [],
+          responseBody.themeTones || {},
+          responseBody.themeEdges || { edge: "#343a40", text: "#1e1e1e" },
+        );
+        nextDiagram = {
+          id: targetDiagram?.id || crypto.randomUUID(),
+          kind: "mermaid",
+          source: nextMermaid,
+          elementIds: [],
+          createdAt: targetDiagram?.createdAt || Date.now(),
+        };
+      } else {
+        throw new Error("Generation returned an unsupported diagram format.");
       }
 
-      const nextMermaid = responseBody.mermaid.trim();
-      if (!nextMermaid) {
-        throw new Error("Generation returned an empty Mermaid diagram.");
-      }
-
-      // Layout is deliberately delegated to Mermaid. Excalidraw receives
-      // concrete elements only after the deterministic local conversion.
-      const { parseMermaidToExcalidraw } = await import(
-        "@excalidraw/mermaid-to-excalidraw"
-      );
-      const mermaidResult = await parseMermaidToExcalidraw(nextMermaid);
-      if (!mermaidResult.elements.length) {
-        throw new Error("Mermaid did not produce any diagram elements.");
-      }
-
-      const aiElementIdSet = new Set(generatedElementIds);
-      const preservedElements = rawElements.filter(
-        (el) => !el.isDeleted && !aiElementIdSet.has(el.id),
-      );
-
-      const aiElements = convertToExcalidrawElements(mermaidResult.elements, {
+      const converted = convertToExcalidrawElements(skeletons, {
         regenerateIds: true,
       });
 
-      excalidrawAPI.updateScene({
-        elements: [...preservedElements, ...aiElements],
-      });
-      setMermaidSource(nextMermaid);
-      setGeneratedElementIds(aiElements.map((element) => element.id));
-      setSaveMessage(
-        mermaidSource
-          ? "Updated — click Save to keep this"
-          : "Generated — click Save to keep this",
+      if (!converted.length) throw new Error("The diagram conversion produced no Excalidraw elements.");
+
+      // Place the complete generated batch around the current viewport centre.
+      const zoom = typeof appState.zoom === "object" ? appState.zoom.value : 1;
+      const viewportCenter = {
+        x: -appState.scrollX + appState.width / (2 * zoom),
+        y: -appState.scrollY + appState.height / (2 * zoom),
+      };
+      const minX = Math.min(...converted.map((el: any) => el.x));
+      const minY = Math.min(...converted.map((el: any) => el.y));
+      const maxX = Math.max(...converted.map((el: any) => el.x + (el.width || 0)));
+      const maxY = Math.max(...converted.map((el: any) => el.y + (el.height || 0)));
+      const previousTargetElements = targetDiagram
+        ? sceneElements.filter((el) => targetDiagram.elementIds.includes(el.id) && !el.isDeleted)
+        : [];
+      const targetCenter = previousTargetElements.length
+        ? {
+            x: (Math.min(...previousTargetElements.map((el) => el.x)) +
+                Math.max(...previousTargetElements.map((el) => el.x + (el.width || 0)))) / 2,
+            y: (Math.min(...previousTargetElements.map((el) => el.y)) +
+                Math.max(...previousTargetElements.map((el) => el.y + (el.height || 0)))) / 2,
+          }
+        : viewportCenter;
+      const dx = targetCenter.x - (minX + maxX) / 2;
+      const dy = targetCenter.y - (minY + maxY) / 2;
+      const positioned = converted.map((el: any) => ({
+        ...el,
+        x: el.x + dx,
+        y: el.y + dy,
+      }));
+
+      const newIds = positioned.map((el: any) => el.id);
+      nextDiagram.elementIds = newIds;
+
+      // Create appends. Edit replaces only the explicitly selected diagram.
+      const replacedIds = operation === "edit" && targetDiagram
+        ? new Set(targetDiagram.elementIds)
+        : new Set<string>();
+      const preserved = sceneElements.filter(
+        (el) => !el.isDeleted && !replacedIds.has(el.id),
       );
 
+      const nextDiagrams = operation === "edit" && targetDiagram
+        ? diagrams.map((diagram) => diagram.id === targetDiagram.id ? nextDiagram : diagram)
+        : [...diagrams, nextDiagram];
+
+      excalidrawAPI.updateScene({
+        elements: [...preserved, ...positioned],
+        appState: {
+          selectedElementIds: Object.fromEntries(newIds.map((id) => [id, true])),
+        },
+      });
+      setDiagrams(nextDiagrams);
+      setSaveMessage(
+        operation === "edit"
+          ? "Updated diagram — click Save to keep this"
+          : "Added a new diagram — click Save to keep this",
+      );
+      setInstruction("");
     } catch (generationError) {
       console.error("[API] POST /api/generate failed", generationError);
       setError(
@@ -440,8 +594,10 @@ function EditorPage() {
         body: JSON.stringify({
           topic: topic.trim(),
           elements: excalidrawAPI.getSceneElements(),
-          mermaid: mermaidSource,
-          mermaidElementIds: generatedElementIds,
+          generatedDiagrams: diagrams,
+          // Legacy compatibility for existing saved workspaces.
+          mermaid: diagrams.slice().reverse().find((d) => d.kind === "mermaid")?.source || "",
+          mermaidElementIds: diagrams.flatMap((d) => d.elementIds),
           appState: {
             viewBackgroundColor: currentAppState.viewBackgroundColor,
             gridSize: currentAppState.gridSize,
@@ -505,10 +661,21 @@ function EditorPage() {
           disabled={generating}
         />
 
+        <span style={{ fontSize: 11, opacity: 0.6 }}>Diagram action</span>
+        <select
+          className="editor-scene-picker"
+          value={operation}
+          onChange={(event) => setOperation(event.target.value as "create" | "edit")}
+          disabled={generating}
+          aria-label="Diagram action"
+        >
+          <option value="create">Create a new independent diagram</option>
+          <option value="edit">Edit selected generated diagram</option>
+        </select>
         <span style={{ fontSize: 11, opacity: 0.6 }}>
-          {mermaidSource
-            ? "Describe an AI diagram update (Mermaid manages the layout)"
-            : "Describe a diagram to generate with AI"}
+          {operation === "edit"
+            ? "Select an element in the diagram you want to change"
+            : "New diagrams are added independently; existing canvas content is preserved"}
         </span>
         <form
           className="editor-ai-form"
@@ -529,9 +696,9 @@ function EditorPage() {
             className="editor-generate-button"
             type="submit"
             disabled={generating || !instruction.trim()}
-            title="Generate or edit diagram"
+            title={operation === "create" ? "Create a new diagram" : "Edit selected diagram"}
           >
-            {generating ? "..." : "Generate"}
+            {generating ? "..." : operation === "create" ? "Create" : "Edit"}
           </button>
           <button
             className="editor-save-button"

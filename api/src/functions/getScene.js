@@ -97,9 +97,16 @@ app.http("getScene", {
       try {
         const response = await container.item(id, userId).read();
 
+        const scene = response.resource || null;
+        if (scene && !Array.isArray(scene.generatedDiagrams)) {
+          // Legacy records predate per-diagram metadata. App.tsx can still
+          // reconstruct one editable Mermaid diagram from legacy fields.
+          scene.generatedDiagrams = [];
+        }
+
         return {
           status: 200,
-          jsonBody: response.resource || null
+          jsonBody: scene
         };
       } catch (error) {
         if (error.code === 404) {
