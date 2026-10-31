@@ -5,6 +5,7 @@ import {
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import "./App.css";
+import "./AIWorkspacePanel.css";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 type SceneSummary = {
@@ -630,102 +631,106 @@ function EditorPage() {
 
   return (
     <div className={`editor-shell theme--${theme}`}>
-      <section className="editor-ai-panel" aria-label="AI diagram generator">
-        <div className="editor-ai-heading">
-          <span className="editor-ai-title">AI Diagram</span>
-          <span className="editor-save-state">{saveMessage}</span>
+      <section className="editor-ai-panel ai-workspace-panel" aria-label="AI visual workspace">
+        <div className="ai-panel-topbar">
+          <div className="ai-panel-brand">
+            <span className="ai-panel-mark" aria-hidden="true">✦</span>
+            <div>
+              <div className="editor-ai-title">Visual workspace</div>
+              <p className="ai-panel-subtitle">Turn ideas into diagrams, comparisons, explanations and visual documents.</p>
+            </div>
+          </div>
+          <div className="ai-panel-status" role="status">{saveMessage}</div>
         </div>
 
-        <select
-          className="editor-scene-picker"
-          value={scenes.some((scene) => scene.topic === topic) ? topic : ""}
-          onChange={(event) => {
-            if (event.target.value) loadScene(event.target.value);
-          }}
-          disabled={loadingScene || generating}
-          aria-label="Open saved canvas"
-        >
-          <option value="">
-            {scenes.length ? "Open saved canvas..." : "No saved canvases yet"}
-          </option>
-          {scenes.map((scene) => (
-            <option key={scene.topic} value={scene.topic}>
-              {scene.topic}
-            </option>
-          ))}
-        </select>
+        <div className="ai-panel-workspace-row">
+          <label className="ai-field ai-workspace-field">
+            <span className="ai-field-label">Workspace</span>
+            <input
+              className="editor-topic-input ai-text-input"
+              value={topic}
+              onChange={(event) => setTopic(event.target.value)}
+              placeholder="Name this workspace"
+              maxLength={180}
+              disabled={generating}
+            />
+          </label>
+          <label className="ai-field ai-open-field">
+            <span className="ai-field-label">Open saved workspace</span>
+            <select
+              className="editor-scene-picker ai-select"
+              value={scenes.some((scene) => scene.topic === topic) ? topic : ""}
+              onChange={(event) => { if (event.target.value) loadScene(event.target.value); }}
+              disabled={loadingScene || generating}
+              aria-label="Open saved workspace"
+            >
+              <option value="">{scenes.length ? "Choose a workspace…" : "No saved workspaces yet"}</option>
+              {scenes.map((scene) => <option key={scene.topic} value={scene.topic}>{scene.topic}</option>)}
+            </select>
+          </label>
+        </div>
 
-        <span style={{ fontSize: 11, opacity: 0.6 }}>Workspace name</span>
-        <input
-          className="editor-topic-input"
-          value={topic}
-          onChange={(event) => setTopic(event.target.value)}
-          placeholder="Workspace name..."
-          maxLength={180}
-          disabled={generating}
-        />
-
-        <span style={{ fontSize: 11, opacity: 0.6 }}>Diagram action</span>
-        <select
-          className="editor-scene-picker"
-          value={operation}
-          onChange={(event) => setOperation(event.target.value as "create" | "edit")}
-          disabled={generating}
-          aria-label="Diagram action"
-        >
-          <option value="create">Create a new independent diagram</option>
-          <option value="edit">Edit selected generated diagram</option>
-        </select>
-        <span style={{ fontSize: 11, opacity: 0.6 }}>
-          {operation === "edit"
-            ? "Select an element in the diagram you want to change"
-            : "New diagrams are added independently; existing canvas content is preserved"}
-        </span>
-        <form
-          className="editor-ai-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void generateDiagram();
-          }}
-        >
-          <textarea
-            className="editor-topic-input editor-instruction-input"
-            value={instruction}
-            onChange={(event) => setInstruction(event.target.value)}
-            placeholder="Describe what you want to understand or create. Short prompts work too..."
-            maxLength={8000}
-            rows={4}
-            disabled={generating}
-            aria-label="Diagram or visual document request"
-            aria-describedby="instruction-limit-hint"
-            style={{ minHeight: 96, resize: "vertical", lineHeight: 1.45 }}
-          />
-          <div
-            id="instruction-limit-hint"
-            style={{ fontSize: 11, opacity: 0.65, textAlign: "right", marginTop: 4 }}
-          >
-            {instruction.length.toLocaleString()} / 8,000 characters · Short prompts are welcome
+        <div className="ai-prompt-area">
+          <div className="ai-prompt-heading">
+            <div>
+              <div className="ai-field-label">What would you like to create?</div>
+              <p className="ai-prompt-hint">Use a few words or a detailed brief. The AI chooses the visual format that fits.</p>
+            </div>
+            <div className="ai-operation-switch" role="group" aria-label="Generation action">
+              <button type="button" className={operation === "create" ? "ai-operation-option is-active" : "ai-operation-option"}
+                onClick={() => setOperation("create")} disabled={generating}>Create new</button>
+              <button type="button" className={operation === "edit" ? "ai-operation-option is-active" : "ai-operation-option"}
+                onClick={() => setOperation("edit")} disabled={generating}>Edit selection</button>
+            </div>
           </div>
-          <button
-            className="editor-generate-button"
-            type="submit"
-            disabled={generating || !instruction.trim() || instruction.length > 8000}
-            title={operation === "create" ? "Create a new diagram" : "Edit selected diagram"}
-          >
-            {generating ? "..." : operation === "create" ? "Create" : "Edit"}
-          </button>
-          <button
-            className="editor-save-button"
-            type="button"
-            onClick={() => void saveScene()}
-            disabled={saving || loadingScene || !topic.trim()}
-            title="Save canvas"
-          >
-            {saving ? "..." : "Save"}
-          </button>
-        </form>
 
-        {error && <p className="editor-ai-error">{error}</p>}
+          <form className="editor-ai-form ai-prompt-form" onSubmit={(event) => { event.preventDefault(); void generateDiagram(); }}>
+            <textarea
+              className="editor-topic-input editor-instruction-input ai-prompt-input"
+              value={instruction}
+              onChange={(event) => setInstruction(event.target.value)}
+              placeholder={'Try “Compare LLMs and SLMs”, “Explain RAG”, or “Design a Kubernetes architecture”…'}
+              maxLength={8000}
+              rows={4}
+              disabled={generating}
+              aria-label="Describe what you want to create"
+              aria-describedby="instruction-limit-hint"
+            />
+            <div className="ai-prompt-footer">
+              <div className="ai-prompt-meta">
+                <span id="instruction-limit-hint">{instruction.length.toLocaleString()} / 8,000 characters</span>
+                <span className="ai-prompt-meta-dot">·</span>
+                <span>Short prompts are welcome</span>
+              </div>
+              <div className="ai-prompt-actions">
+                <button className="editor-save-button ai-save-button" type="button" onClick={() => void saveScene()}
+                  disabled={saving || loadingScene || !topic.trim()} title="Save workspace">
+                  {saving ? "Saving…" : "Save workspace"}
+                </button>
+                <button className="editor-generate-button ai-generate-button" type="submit"
+                  disabled={generating || !instruction.trim() || instruction.length > 8000}
+                  title={operation === "create" ? "Create a new visual" : "Edit the selected visual"}>
+                  {generating ? <><span className="ai-button-spinner" aria-hidden="true" /> Working…</> : operation === "create" ? "✦ Create visual" : "✎ Apply edit"}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <div className="ai-prompt-examples" aria-label="Prompt examples">
+            <span className="ai-examples-label">Try:</span>
+            {["Compare LLMs and SLMs", "Explain transformers", "RAG architecture", "Write an article on inference engineering"].map((example) => (
+              <button key={example} type="button" className="ai-example-chip" disabled={generating}
+                onClick={() => setInstruction(example)}>{example}</button>
+            ))}
+          </div>
+          <p className="ai-mode-hint">
+            {operation === "edit"
+              ? "Select an element inside the visual you want to change, then describe the edit."
+              : "New visuals are added independently. Existing canvas content stays untouched. Mermaid is used only when a diagram benefits from it."}
+          </p>
+        </div>
+
+        {error && <p className="editor-ai-error ai-panel-error" role="alert">{error}</p>}
       </section>
 
       <Excalidraw

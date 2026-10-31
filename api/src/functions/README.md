@@ -1,40 +1,41 @@
-# Excalidraw content-aware generation update
+# Excalidraw visual-composition and AI-panel update
 
 ## What changed
 
-- Raised the generation request cap from 400 to **8,000 characters** in the Azure Function.
-- Replaced the single-line instruction input with a multiline textarea and a live character counter. The workspace name remains capped separately at 180 characters.
-- Added an explicit client-side length guard and matching server-side validation. Requests over the cap are rejected with a clear message; they are never silently truncated.
-- Strengthened planner and Mermaid instructions for short prompts (including prompts under 10 words), long prompts, semantic intent inference, content-to-visual composition, section hierarchy, concise explanatory units, and relationship quality.
-- Kept topic selection dynamic. No RAG, Transformer, Kubernetes, or other topic-specific layout templates were added.
-- Preserved the existing renderer, theme tokens, layout engines, wireframe primitives, and scene persistence implementation.
+### Visual representation selection
+- The planner now distinguishes diagrams from non-sequential visual explanations.
+- Two-way comparisons should use the existing `comparison` grammar: two aligned columns, comparable rows, concise text boxes, and no arrows unless a real relationship needs one.
+- Concept summaries, pros/cons, key-point collections, and comparisons with more than two alternatives can use the new general-purpose `cards` grammar.
+- `cards` lays out independent explanatory boxes in a 1–3 column grid. It is a reusable visual grammar, not a topic-specific template.
+- Mermaid is no longer the universal fallback. It is used only when the planner explicitly selects Mermaid, or when editing an existing Mermaid diagram. If a specialised planner response is invalid or returns `freeform`, the backend asks for a text-card composition instead.
 
-## Prompt behavior
+### AI panel UI
+- Reworked the AI panel into a clearer visual workspace: workspace name, saved-workspace selector, create/edit switch, multiline prompt, character count, action buttons, examples, and contextual help.
+- Added isolated styles in `AIWorkspacePanel.css`; the existing `App.css` remains part of the user's application and is not replaced.
+- The UI explains that the AI chooses the representation and that new diagrams remain independent from existing canvas content.
 
-The model is instructed to treat prompt length independently from output quality. A short prompt such as `Transformers`, `RAG architecture`, or `compare SQL and NoSQL` should infer a sensible deliverable from the intent words. A long prompt should preserve explicit constraints and organise content before drawing. For article/tutorial requests, the planner is instructed to compose a visual document with a small number of meaningful sections rather than forcing all content into one flowchart.
+### Prompt length
+- Request cap remains **8,000 characters** in both UI and Azure Function.
+- Short prompts (including fewer than 10 words) are explicitly valid. The planner is instructed to infer a focused, conventional intent rather than demand more words.
+- Requests over the cap are rejected; they are not silently truncated.
 
-These are model instructions, not deterministic guarantees. Evaluate with the same prompt set against your configured model.
+## Files to integrate
+- `App.tsx` — updated AI workspace UI.
+- `AIWorkspacePanel.css` — new stylesheet; add alongside `App.tsx`.
+- `generate.js` — planner intent rules, cards fallback, Mermaid selection policy, and 8,000-character API limit.
+- `layout-patterns.js` — generic `cards` layout grammar and prompt schema updates.
+- `excalidraw-render.js` — unchanged.
+- `wireframe-kit.js` — unchanged.
+- `saveScene.js`, `getScene.js` — unchanged persistence layer.
 
-## Limits
-
-- Instruction cap: 8,000 JavaScript characters (same UI/API limit).
-- Workspace name cap: 180 characters (unchanged).
-- Existing Mermaid source cap: 24,000 characters (unchanged).
-- Existing spec cap: 40,000 characters (unchanged).
-
-## Files
-
-- `App.tsx` — multiline prompt UI, counter, client validation.
-- `generate.js` — 8,000-character API cap and strengthened planning/Mermaid prompts.
-- `layout-patterns.js` — shared composition rules for intent inference and content-aware visual planning.
-- `excalidraw-render.js` — unchanged renderer.
-- `wireframe-kit.js` — unchanged generic UI primitives.
-- `saveScene.js`, `getScene.js` — unchanged persistence functions.
+Keep the existing `App.css` and import it as before. Ensure the Azure Function deployment includes `generate.js`, `layout-patterns.js`, `excalidraw-render.js`, and `wireframe-kit.js` in the same module directory.
 
 ## Validation performed
+- `node --check` passed for all JavaScript runtime files.
+- `test-visual-representation.js` passed: comparison uses two aligned groups and no generated arrows; generic cards render as independent text boxes; 8,000-character cap is exported and checked.
+- `test-layout-quality.js` passed: generic pipeline and composite layout smoke tests, relationship endpoint integrity, and unique IDs.
+- `test-content-aware-prompts.js` passed: short-prompt and long-form guidance plus input-limit contract.
+- `test-generate-api-contract.js` passed with mocked dependencies: 3-word prompt accepted, 8,000 characters accepted, 8,001 rejected before model call.
+- `App.tsx` passed TypeScript TSX transpilation.
 
-- JavaScript syntax checks for backend and layout modules.
-- Prompt contract tests for short prompts, long article prompts, and the 8,000-character boundary.
-- Frontend TSX transpilation/syntax check where the local TypeScript compiler is available.
-
-No live Azure OpenAI call, deployed API test, full TypeScript project type-check, or browser interaction test is claimed. The TSX file was syntax-transpiled with the installed TypeScript compiler.
+Not run: live Azure OpenAI calls, deployed Azure Functions integration, browser interaction, screenshot regression, or full project type-check/build. A legacy `test-layout-patterns.js` fixture from the earlier package was removed because it exercised an outdated wireframe schema; current-schema smoke coverage is in `test-layout-quality.js` and `test-visual-representation.js`.

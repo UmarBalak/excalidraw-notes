@@ -248,6 +248,18 @@ PATTERNS.swimlane = {
   }
 };
 
+PATTERNS.cards = {
+  when: "Concept explanations, comparisons with more than two options, key-point collections, pros/cons, summaries, and non-sequential information best expressed as text cards.",
+  schema: `optional columns = 1|2|3; nodes are independent content cards in reading order; do not create edges unless a real relationship must be shown. Use concise card headings and compact point text.`,
+  layout(spec, nodes, sizes) {
+    const columns = clamp(Number.isInteger(spec.columns) ? spec.columns : 2, 1, 3);
+    const cells = nodes.map((node, index) => ({
+      id: node.id, ...sizes.get(node.id), row: Math.floor(index / columns), col: index % columns
+    }));
+    return { boxes: gridLayout(cells, { gapX: 48, gapY: 40, centerRows: false }) };
+  }
+};
+
 PATTERNS.comparison = {
   when: "A vs B (two approaches, before/after, SQL vs NoSQL).",
   schema: `exactly 2 groups {id,label,nodes}; nodes at same index are aligned rows. Optional cross edges (compares_with).`,
@@ -674,7 +686,7 @@ Return ONLY one JSON object.
 
 For a technical diagram:
 {
-  "pattern": "pipeline|flow|tiers|swimlane|comparison|layers-net|tree|hub|cycle|composite|freeform",
+  "pattern": "pipeline|flow|tiers|swimlane|comparison|cards|layers-net|tree|hub|cycle|composite|freeform",
   "direction": "LR|TB",
   "title": "specific title",
   "subtitle": "short purpose",
@@ -683,6 +695,7 @@ For a technical diagram:
   "nodes": [{"id":"stable-kebab-id","label":"specific concise label","role":"hero|primary|secondary|supporting|external|decision"}],
   "edges": [{"from":"node-id","to":"node-id","label":"optional short label","kind":"flow|feedback|skip|data"}],
   "dense": [["layer-a","layer-b"]],
+  "columns": 2,
   "notes": [{"title":"specific note","items":["useful detail"]}]
 }
 
@@ -710,7 +723,7 @@ Composition rules:
 7. Use only semantically valid nodes and connections. Every edge must express a real data, control, dependency, sequence, or feedback relationship. Avoid invented components and decorative arrows.
 8. Establish a clear global reading order, section hierarchy, balanced region placement, and sufficient whitespace. Keep related material close; minimise unnecessary cross-region connections.
 9. Keep node labels compact. Put explanations in notes rather than long node labels. Adapt detail to available space; prefer several focused explanatory units over one overloaded card.
-10. For grouped patterns, every node must belong to exactly one group. IDs must be unique after slug normalization.
+10. For grouped patterns, every node must belong to exactly one group. IDs must be unique after slug normalization. For cards, use 1-3 columns, keep nodes independent, and leave edges empty unless they express a necessary relationship.
 11. If none of the supported diagram grammars fits, return {"pattern":"freeform"}; the caller will use the full Canvas IR prompt.
 12. Return JSON only, no markdown or explanation outside it.
 `;

@@ -39,6 +39,7 @@ Extra rules for this planner:
 - For long requests, preserve explicit requirements and named entities. Prioritise the user's requested scope over
   generic defaults. Structure the content before drawing it: identify the central idea, major sections, dependencies,
   examples, caveats, and conclusion where relevant. Avoid repeating the same explanation in multiple cards.
+- For explicit comparisons, prefer pattern "comparison" for two alternatives or "cards" for three or more; align like-for-like attributes, use concise text boxes, and do not add arrows unless they express a real relationship. For concept explanations, summaries, pros/cons, or key points, prefer "cards" rather than Mermaid.
 - Choose a visual representation that matches the semantics: sequence for ordered steps, layers-net for neural layers,
   comparison for alternatives, tree for hierarchy, hub for central relationships, cycle for feedback loops, and composite
   for multiple related subsystems or mixed section types. These are reusable grammars, not topic-specific templates.
@@ -101,6 +102,23 @@ SYNTAX AND SAFETY
 - Also return "tones": a map of node id -> one of ${TONE_NAMES.join("|")} based on semantic meaning. Use consistent
   tones for equivalent roles; do not impose an arbitrary tone-count limit.
 Output exactly: {"mermaid":"...","tones":{"id":"tone"}}
+`.trim();
+
+// Non-Mermaid fallback for requests best expressed as text cards.
+const CARDS_PROMPT = `
+You are a visual-content planner for an Excalidraw canvas. Return a concise, useful visual composition as JSON.
+Use the reusable cards grammar for information that is explanatory, comparative, descriptive, or non-sequential.
+Do not turn a comparison, list of concepts, article section, or set of key points into a flowchart.
+For comparisons, use pattern "comparison" with exactly two groups and align equivalent attributes by row.
+For concept summaries, pros/cons, multi-option comparisons, or key-point collections, use pattern "cards" with 1-3 columns.
+Each card is one text box: use a short heading followed by a compact explanation or a few concise points in its label.
+Use notes for selection guidance, caveats, or a small supporting explanation. Keep edges empty unless a real relationship is essential.
+Use no topic-specific templates. Infer the visual grammar from the request's intent and information structure.
+A short prompt is valid; infer a focused, conventional scope without asking for more words.
+Return exactly one JSON object with pattern, title, subtitle, columns (for cards), groups (for comparison), nodes, edges, and optional notes.
+Node shape: {"id":"stable-id","label":"Heading\nConcise explanation","role":"primary|secondary|supporting|hero"}.
+Comparison groups shape: [{"id":"a","label":"Option A","nodes":[...]},{"id":"b","label":"Option B","nodes":[...]}].
+Do not invent precise metrics or unsupported factual claims. Return JSON only.
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -250,9 +268,12 @@ async function createDiagram({ operation = "create", topic, existingMermaid, exi
   }
   if (scene) return scene;
 
-  // Planner said freeform, produced an invalid spec, or layout bailed: dedicated Mermaid call.
-  const parsed = await callJson(MERMAID_PROMPT, userBlock(topic, "", "existing_mermaid"), 3_000);
-  return mermaidResult(parsed, theme);
+  // If the planner cannot select a specialised grammar, fall back to a text-card
+  // composition. Mermaid is used only when the planner explicitly selects it.
+  const cardPlan = await callJson(CARDS_PROMPT, userBlock(topic, "", "existing_spec"), 4_000);
+  const cards = sceneResult(cardPlan, theme);
+  if (cards) return cards;
+  throw new Error("The planner could not produce a valid visual composition. Try a more specific request.");
 }
 
 app.http("generate", {
@@ -310,4 +331,4 @@ app.http("generate", {
   },
 });
 
-module.exports = { PLANNER_PROMPT, sceneResult, cleanMermaid, mermaidStyles, normalizeFlowchartLabels };
+module.exports = { PLANNER_PROMPT, MERMAID_PROMPT, CARDS_PROMPT, MAX_PROMPT_LENGTH, sceneResult, cleanMermaid, mermaidStyles, normalizeFlowchartLabels };
