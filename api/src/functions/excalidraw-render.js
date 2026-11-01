@@ -9,26 +9,19 @@
  * Also exports styleMermaidSkeletons() so Mermaid diagrams get the same look.
  *
  * The LLM only ever picks a semantic "tone". This file owns every color.
+ *
+ * THEMING: Excalidraw stores element colors theme-agnostically and its own dark
+ * mode re-colours them at render time (invert + hue-rotate). So every colour we
+ * emit is a LIGHT-palette colour, regardless of the editor's current theme. The
+ * same elements then look right in Excalidraw's light AND dark mode, and keep
+ * looking right if the user toggles the theme after generating. Never bake a
+ * dark palette into element data: Excalidraw would invert it a second time.
  */
 
+// One canonical palette. Values are chosen to survive Excalidraw's dark-mode
+// transform: dark text on pastel fills becomes light text on deep, hue-preserving
+// fills; strokes stay saturated; transparent fills stay transparent.
 const THEMES = {
-  dark: {
-    background: "#121212",
-    text: "#e5e5e5",
-    tones: {
-      default: { stroke: "#e5e5e5", fill: "transparent", text: "#e5e5e5" },
-      accent:  { stroke: "#4caf50", fill: "transparent", text: "#4caf50" },
-      danger:  { stroke: "#ff6b6b", fill: "transparent", text: "#ff6b6b" },
-      warn:    { stroke: "#f59f00", fill: "transparent", text: "#f59f00" },
-      info:    { stroke: "#1c7ed6", fill: "#1e3a5f",     text: "#e5e5e5" },
-      violet:  { stroke: "#9775fa", fill: "#3b2a6b",     text: "#e5e5e5" },
-      success: { stroke: "#2f9e44", fill: "#0b3d1e",     text: "#e5e5e5" },
-      muted:   { stroke: "#868e96", fill: "transparent", text: "#adb5bd" }
-    },
-    edge: "#c9c9c9",
-    edgeDense: "#6b6b6b",
-    container: "#e5e5e5"
-  },
   light: {
     background: "#ffffff",
     text: "#1e1e1e",
@@ -47,7 +40,9 @@ const THEMES = {
     container: "#495057"
   }
 };
-
+// Back-compat: callers may still ask for "dark". Excalidraw handles dark itself,
+// so this deliberately resolves to the same light-space palette.
+THEMES.dark = THEMES.light;
 const TONE_NAMES = ["default", "accent", "danger", "warn", "info", "violet", "success", "muted"];
 // Colors cycled across groups/regions/lanes when the LLM gives no explicit tone.
 const CATEGORICAL = ["info", "violet", "success", "warn", "accent", "danger"];
@@ -98,13 +93,13 @@ function portPoint(box, side, anchor = 0.5) {
  * @param {{operations: object[]}} ir        output of specToOperations()
  * @param {object} opts
  * @param {string} opts.pattern              spec.pattern (colors layers-net by depth)
- * @param {"dark"|"light"} [opts.theme]
+ * @param {"dark"|"light"} [opts.theme]   accepted for compatibility; colours are always light-space (see THEMING)
  * @param {Map|object} [opts.tones]          nodeId -> tone name chosen by the LLM
  * @param {boolean} [opts.elbow]             use elbow arrows for orthogonal routes
  * @returns {{elements: object[], appState: object}}
  */
 function irToElements(ir, opts = {}) {
-  const theme = THEMES[opts.theme] || THEMES.dark;
+  const theme = THEMES[opts.theme] || THEMES.light;
   const ops = (ir?.operations || []).map((o) => o.element).filter(Boolean);
   const toneById = opts.tones instanceof Map ? opts.tones : new Map(Object.entries(opts.tones || {}));
 
@@ -185,8 +180,8 @@ function irToElements(ir, opts = {}) {
  * convertToExcalidrawElements(). `styles` comes from the server: [{id,label,tone}].
  * Matches by skeleton id first, then by label text.
  */
-function styleMermaidSkeletons(skeletons, styles = [], themeName = "dark") {
-  const theme = THEMES[themeName] || THEMES.dark;
+function styleMermaidSkeletons(skeletons, styles = [], themeName = "light") {
+  const theme = THEMES[themeName] || THEMES.light;
   const byId = new Map(styles.map((s) => [s.id, s.tone]));
   const byLabel = new Map(styles.filter((s) => s.label).map((s) => [s.label.trim().toLowerCase(), s.tone]));
   return skeletons.map((el) => {

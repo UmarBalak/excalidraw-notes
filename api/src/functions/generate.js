@@ -199,9 +199,9 @@ function mermaidStyles(mermaid, tones) {
   }));
 }
 
-function mermaidResult(parsed, themeName = "dark") {
+function mermaidResult(parsed, themeName = "light") {
   const mermaid = cleanMermaid(parsed.mermaid);
-  const theme = THEMES[themeName] || THEMES.dark;
+  const theme = THEMES[themeName] || THEMES.light;
   return {
     kind: "mermaid",
     mermaid,
@@ -295,7 +295,10 @@ app.http("generate", {
       const topic = String(body?.topic || "").trim();
       const existingMermaid = typeof body?.existingMermaid === "string" ? body.existingMermaid.trim() : "";
       const existingSpec = body?.existingSpec && typeof body.existingSpec === "object" ? body.existingSpec : null;
-      const theme = body?.theme === "light" ? "light" : "dark";
+      // Colours are always generated in the light palette: Excalidraw's native dark
+      // mode re-colours stored elements itself, so one set of colours is correct in
+      // both themes. The client's `theme` field is accepted but not used for colour.
+      const theme = "light";
 
       if (!topic) return { status: 400, jsonBody: { error: "A diagram request is required." } };
       if (topic.length > MAX_PROMPT_LENGTH) {
