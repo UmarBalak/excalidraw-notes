@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import "./Landing.css";
 
-type Provider = "github" | "aad";
+type Provider = "github";
 
-// Static Web Apps built-in providers. "aad" is Microsoft Entra ID.
+// Static Web Apps built-in GitHub sign-in (free plan). Access is limited by the
+// "editor" role, granted through invitations (see staticwebapp.config.json).
 const PROVIDERS: Record<Provider, { name: string; url: string }> = {
   github: { name: "GitHub", url: "/.auth/login/github?post_login_redirect_uri=/editor" },
-  aad: { name: "Microsoft", url: "/.auth/login/aad?post_login_redirect_uri=/editor" },
 };
 
 type Theme = "light" | "dark";
@@ -43,17 +43,6 @@ function BrandMark() {
   );
 }
 
-function MicrosoftIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="#f25022" d="M2 2h9.5v9.5H2z" />
-      <path fill="#7fba00" d="M12.5 2H22v9.5h-9.5z" />
-      <path fill="#00a4ef" d="M2 12.5h9.5V22H2z" />
-      <path fill="#ffb900" d="M12.5 12.5H22V22h-9.5z" />
-    </svg>
-  );
-}
-
 function SignInButton({
   provider,
   loggingIn,
@@ -81,10 +70,8 @@ function SignInButton({
     >
       {busy ? (
         <span className="lp-spinner" aria-hidden="true" />
-      ) : provider === "github" ? (
-        <GitHubIcon />
       ) : (
-        <MicrosoftIcon />
+        <GitHubIcon />
       )}
       {busy ? `Opening ${PROVIDERS[provider].name}…` : `Sign in with ${PROVIDERS[provider].name}`}
     </button>
@@ -353,7 +340,6 @@ export default function LandingPage() {
           </p>
           <div className="lp-actions" id="signin">
             <SignInButton provider="github" loggingIn={loggingIn} onSignIn={signIn} large />
-            <SignInButton provider="aad" loggingIn={loggingIn} onSignIn={signIn} large ghost />
           </div>
           <br />
           <p className="lp-note">
@@ -419,7 +405,6 @@ export default function LandingPage() {
           <h2>Open your canvas.</h2>
           <div className="lp-actions">
             <SignInButton provider="github" loggingIn={loggingIn} onSignIn={signIn} large />
-            <SignInButton provider="aad" loggingIn={loggingIn} onSignIn={signIn} large ghost />
           </div>
         </section>
 

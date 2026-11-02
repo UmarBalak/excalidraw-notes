@@ -12,12 +12,12 @@ behind an invite-only sign-in.
 ![home page](image.png)
 
 ![canvas diagram](image-1.png)
-
 ---
 
 ## Table of contents
 
 - [Layr](#layr)
+  - [](#)
   - [Table of contents](#table-of-contents)
   - [Credit and relationship to Excalidraw](#credit-and-relationship-to-excalidraw)
   - [Features](#features)
@@ -39,6 +39,7 @@ behind an invite-only sign-in.
     - [`POST /api/saveScene`](#post-apisavescene)
   - [Data model](#data-model)
   - [Authentication and access control](#authentication-and-access-control)
+    - [Inviting someone](#inviting-someone)
   - [Deployment](#deployment)
   - [Limits and security notes](#limits-and-security-notes)
   - [Roadmap](#roadmap)
@@ -95,8 +96,8 @@ running your own private instance. If you want the official experience, use
   element ids, so several can live next to ordinary hand-drawn work.
 - **Saved workspaces.** Name a workspace, save it, reopen it later. Generated
   diagrams stay editable by prompt after a reload.
-- **Invite-only access.** GitHub or Microsoft sign-in, restricted to invited
-  accounts with a custom role.
+- **Invite-only access.** GitHub sign-in, restricted to invited accounts with a
+  custom role.
 - **Landing page** in the Excalidraw style with a light/dark toggle and credits.
 
 ## How it works
@@ -222,7 +223,7 @@ independent of the editor theme.
 | Canvas | `@excalidraw/excalidraw`, `@excalidraw/mermaid-to-excalidraw` |
 | API | Azure Functions (Node.js, v4 programming model) |
 | LLM | Azure OpenAI through the `openai` SDK, Responses API with JSON output |
-| Auth and hosting | Azure Static Web Apps (GitHub and Microsoft sign-in) |
+| Auth and hosting | Azure Static Web Apps (Free plan works) with built-in GitHub sign-in |
 | Storage | A database behind the Functions API |
 
 ## Project structure
@@ -259,7 +260,7 @@ everything else renders the landing page.
 
 - Node.js 20 or newer
 - An Azure OpenAI resource with a deployed model
-- A GitHub or Microsoft account for sign-in
+- A GitHub account for sign-in
 - [Azure Static Web Apps CLI](https://github.com/Azure/static-web-apps-cli) and
   [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
   for running locally
@@ -406,23 +407,35 @@ for the edit.
 
 ## Authentication and access control
 
-Sign-in is handled by Azure Static Web Apps, not by application code.
+Sign-in is handled by Azure Static Web Apps, not by application code, using its
+built-in GitHub provider. That works on the Free plan and needs no OAuth app of
+your own.
 
-- The landing page offers **Sign in with GitHub**
-  (`/.auth/login/github?post_login_redirect_uri=/editor`) and **Sign in with
-  Microsoft** (`/.auth/login/aad?post_login_redirect_uri=/editor`).
+- The landing page sends users to
+  `/.auth/login/github?post_login_redirect_uri=/editor`.
 - The editor's log out button goes to `/.auth/logout?post_logout_redirect_uri=/`.
 - Access is limited to **invited accounts**. `/editor`, `/editor/*` and `/api/*`
   require the custom role `editor`. The built-in `authenticated` role is not
-  enough: it would admit any GitHub or Microsoft account.
+  enough: it would admit any GitHub account.
 - Signed-in users without the role see `public/no-access.html` (a 403).
 
-Inviting someone (Azure portal): open the Static Web App, then **Settings, Role
-management, Invite**. Choose the provider, enter their GitHub username (GitHub
-exposes usernames, not emails) or their Microsoft account email, set the role to
-`editor`, generate the link and send it. Invite yourself before deploying the
-role rules, or you will lock yourself out. `/.auth/me` shows the roles of the
-signed-in user for debugging.
+### Inviting someone
+
+Azure portal, your Static Web App, **Settings, Role management, Invite**. Choose
+**GitHub** as the provider and enter the person's GitHub **username** (GitHub
+exposes usernames, not emails). Set the role to `editor`, pick the domain they
+will use, set an expiry (up to 168 hours), generate the link and send it. Each
+person opens their own link once and signs in. To remove someone, select them in
+Role management and delete them (it can take a few minutes to propagate).
+
+Invite yourself before deploying the role rules, or you will lock yourself out.
+`/.auth/me` shows the signed-in user's provider, `userDetails` and roles for
+debugging.
+
+Why GitHub only: sign-in with other providers such as Google needs custom
+registrations, which require the Standard plan, and using any custom registration
+turns the built-in providers off. The unused built-in providers are blocked with
+404 route rules.
 
 `staticwebapp.config.json`:
 
@@ -432,6 +445,7 @@ signed-in user for debugging.
     { "route": "/editor", "allowedRoles": ["editor"] },
     { "route": "/editor/*", "allowedRoles": ["editor"] },
     { "route": "/api/*", "allowedRoles": ["editor"] },
+    { "route": "/.auth/login/aad", "statusCode": 404 },
     { "route": "/.auth/login/twitter", "statusCode": 404 }
   ],
   "responseOverrides": {
@@ -452,13 +466,14 @@ signed-in user for debugging.
 
 ## Deployment
 
-1. Create an Azure Static Web App and connect this repository.
+1. Create an Azure Static Web App (the Free plan is enough) and connect this
+   repository.
 2. Build settings: app location `/`, API location `api`, output `dist`.
 3. Add the [configuration](#configuration) values as application settings.
 4. Invite yourself with the `editor` role (see above).
 5. Push to the connected branch. The generated GitHub Actions workflow builds
    and deploys the app and the API.
-6. Test with an uninvited account: it should reach the no-access page, and
+6. Test with an uninvited GitHub account: it should reach the no-access page, and
    `/api/listScenes` should be blocked.
 
 ## Limits and security notes

@@ -148,8 +148,8 @@
 .lp-theme {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--lp-line);
   border-radius: 50%;
   background: var(--lp-surface);
@@ -177,12 +177,12 @@
   letter-spacing: 0.02em;
   text-decoration: none;
   cursor: pointer;
-  box-shadow: 0 0 0 5px var(--lp-halo);
+  box-shadow: 0 0 0 4px var(--lp-halo);
   transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 .lp-btn:hover:not(:disabled) {
   background: var(--lp-btn-hover);
-  box-shadow: 0 0 0 7px var(--lp-halo);
+  box-shadow: 0 0 0 5px var(--lp-halo);
 }
 .lp-btn:active:not(:disabled) { transform: scale(0.98); }
 .lp-btn:disabled { cursor: progress; opacity: 0.75; }
@@ -195,7 +195,9 @@
   box-shadow: none;
 }
 .lp-btn--ghost:hover:not(:disabled) { background: var(--lp-tint); box-shadow: none; }
-.lp-btn--lg { min-height: 60px; padding: 0 38px; font-size: 19px; }
+.lp-btn--lg { min-height: 48px; padding: 0 22px; font-size: 16px; gap: 9px; }
+.lp-btn--lg svg { width: 18px; height: 18px; }
+.lp-nav .lp-btn { min-height: 40px; padding: 0 18px; font-size: 15px; }
 
 .lp-spinner {
   width: 15px;
@@ -273,13 +275,13 @@
   line-height: 1.6;
 }
 .lp-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 18px;
-  margin-top: 44px;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 12px;
+  margin-top: 32px;
 }
-.lp-note { margin-top: 26px; color: var(--lp-ink-2); font-size: 15px; }
+.lp-note { margin-top: 18px; color: var(--lp-ink-2); font-size: 15px; }
 .lp-note a { color: var(--lp-pen); font-weight: 600; text-underline-offset: 3px; }
 #signin { scroll-margin-top: 120px; }
 .lp-cta .lp-actions { margin-top: 0; }
@@ -536,8 +538,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 26px;
-  padding: clamp(44px, 6vw, 76px) 24px;
+  gap: 20px;
+  padding: clamp(36px, 5vw, 60px) 24px;
   border-radius: 32px;
   background: var(--lp-tint);
   text-align: center;
@@ -575,7 +577,7 @@
   .lp-credit-card { grid-template-columns: 1fr; }
   .lp-tool:nth-child(n + 6) { display: none; }
   .lp-dots, .lp-insert, .lp-prompt-btn { display: none; }
-  .lp-actions { flex-direction: column; width: 100%; }
+  .lp-actions { grid-auto-flow: row; grid-auto-columns: auto; width: 100%; }
   .lp-actions .lp-btn { width: 100%; }
 }
 
